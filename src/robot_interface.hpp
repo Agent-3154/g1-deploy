@@ -75,7 +75,7 @@ struct RobotData {
     std::array<T, 29> q;
     std::array<T, 29> q_target;
     std::array<T, 29> dq;
-    // std::array<T, 29> dq_target;
+    std::array<T, 29> dq_target;
     std::array<T, 29> tau;
     std::array<T, 29> joint_stiffness;
     std::array<T, 29> joint_damping;
@@ -146,6 +146,14 @@ public:
 
     void setJointDamping(const std::array<T, 29> &joint_damping) {
         this->robot_data_.joint_damping = joint_damping;
+    }
+
+    void writeJointPositionTarget(const std::array<T, 29> &joint_position_target) {
+        this->robot_data_.q_target = joint_position_target;
+    }
+
+    void writeJointVelocityTarget(const std::array<T, 29> &joint_velocity_target) {
+        this->robot_data_.dq_target = joint_velocity_target;
     }
 };
 
@@ -304,7 +312,7 @@ private:
                     
                     // Compute PD control torque
                     double tau = this->robot_data_.joint_stiffness[i] * (this->robot_data_.q_target[i] - q_curr)
-                               - this->robot_data_.joint_damping[i] * dq_curr;
+                               + this->robot_data_.joint_damping[i] * (this->robot_data_.dq_target[i] - dq_curr);
                     
                     // Set control input for actuator
                     this->data_->ctrl[i] = tau;

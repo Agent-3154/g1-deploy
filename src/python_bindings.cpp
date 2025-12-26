@@ -71,7 +71,13 @@ PYBIND11_MODULE(g1_interface, m) {
         }, py::arg("joint_stiffness"), "Set the joint stiffness (accepts list, tuple, or numpy array)")
         .def("set_joint_damping", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_damping) {
             self.setJointDamping(convert_to_float_array(joint_damping));
-        }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)");
+        }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)")
+        .def("write_joint_position_target", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_position_target) {
+            self.writeJointPositionTarget(convert_to_float_array(joint_position_target));
+        }, py::arg("joint_position_target"), "Write the joint position target (accepts list, tuple, or numpy array)")
+        .def("write_joint_velocity_target", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_velocity_target) {
+            self.writeJointVelocityTarget(convert_to_float_array(joint_velocity_target));
+        }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)");
 
     // Expose G1MujocoInterface (uses double)
     py::class_<G1MujocoInterface>(m, "G1MujocoInterface")
@@ -94,6 +100,12 @@ PYBIND11_MODULE(g1_interface, m) {
         .def("get_timestep", &G1MujocoInterface::get_timestep, "Get physics timestep")
         .def("reset", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_pos) {
             self.reset(convert_to_double_array(joint_pos));
-        }, py::arg("joint_pos"), "Reset the simulation");
+        }, py::arg("joint_pos"), "Reset the simulation")
+        .def("write_joint_position_target", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_position_target) {
+            self.writeJointPositionTarget(convert_to_double_array(joint_position_target));
+        }, py::arg("joint_position_target"), "Write the joint position target (accepts list, tuple, or numpy array)")
+        .def("write_joint_velocity_target", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_velocity_target) {
+            self.writeJointVelocityTarget(convert_to_double_array(joint_velocity_target));
+        }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)");
 }
 

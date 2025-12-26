@@ -120,6 +120,9 @@ if __name__ == "__main__":
         mjData.qpos[7:] = data.q
         mjData.qvel[6:] = data.dq
         mujoco.mj_forward(mjModel, mjData)
+        
+        robot.write_joint_position_target(default_joint_pos[isaac2mujoco])
+
         if i % 1000 == 0:
             robot.reset(joint_pos=default_joint_pos[isaac2mujoco])
 
