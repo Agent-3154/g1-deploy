@@ -79,7 +79,7 @@ struct RobotData {
 
     // Body positions: [n_bodies, 3] - Eigen matrix for efficient contiguous storage and operations
     Eigen::Matrix<T, Eigen::Dynamic, 3> body_positions;
-
+    Eigen::Matrix<T, Eigen::Dynamic, 4> body_quaternions;
     // std::array<T, 6> body_velocities; // linear velocity and angular velocity
 };
 
@@ -92,6 +92,9 @@ protected:
     mjModel *model_;
     mjData *data_;
 public:
+    int njoints_;
+    int nbodies_;
+
     G1Interface() {
         model_ = nullptr;
         data_ = nullptr;
@@ -118,8 +121,12 @@ public:
         std::cout << "Model has " << this->model_->nq << " DOFs" << std::endl;
         std::cout << "Model has " << this->model_->nbody << " bodies" << std::endl;
         
+        this->njoints_ = this->model_->nq - 7;
+        this->nbodies_ = this->model_->nbody;
+
         // Initialize body_positions Eigen matrix to match number of bodies [nbody, 3]
-        this->robot_data_.body_positions.resize(this->model_->nbody, 3);
+        this->robot_data_.body_positions.resize(this->nbodies_, 3);
+        this->robot_data_.body_quaternions.resize(this->nbodies_, 4);
     }
     
     RobotData<T> getData() const {
@@ -151,17 +158,36 @@ private:
         this->robot_data_.rpy = low_state.imu_state().rpy();
         this->robot_data_.omega = low_state.imu_state().gyroscope();
         lowstate_counter_ = (lowstate_counter_ + 1) % 100;
-        this->computeFK();
+        
+        if (lowstate_counter_ % 10 == 0) {
+            this->computeFK();
+        }
     }
 
     void computeFK() {
         if (this->model_ && this->data_) {
+            // Copy robot_data_ into data_ to compute FK
+            // Root quaternion: qpos[3:7] = [w, x, y, z]
+            std::copy(this->robot_data_.quaternion.begin(),
+                        this->robot_data_.quaternion.end(),
+                        this->data_->qpos + 3);
+            
+            // Joint positions: qpos[7:7+29] = robot_data_.q[0:29]
+            for (int i = 0; i < this->njoints_; i++) {
+                this->data_->qpos[7 + i] = static_cast<mjtNum>(this->robot_data_.q[i]);
+            }
+            
             mj_forward(this->model_, this->data_);
+
             // Update body positions from data_->xpos [nbody, 3] using Eigen::Map for efficient copy
-            if (this->model_->nbody > 0) {
+            if (this->nbodies_ > 0) {
                 Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
-                    this->data_->xpos, this->model_->nbody, 3);
+                    this->data_->xpos, this->nbodies_, 3);
                 this->robot_data_.body_positions = xpos_map.cast<float>();
+                
+                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 4, Eigen::RowMajor>> xquat_map(
+                    this->data_->xquat, this->nbodies_, 4);
+                this->robot_data_.body_quaternions = xquat_map.cast<float>();
             }
         }
     }
