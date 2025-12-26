@@ -1,5 +1,8 @@
 import sys
 import time
+import mujoco
+import mujoco.viewer
+import numpy as np
 from pathlib import Path
 
 # Add the build directory to Python path to import the compiled module
@@ -13,17 +16,25 @@ import g1_interface
 if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
-    robot = g1_interface.G1Interface("enp58s0")
+    hardware = False
     mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
-    robot.load_mjcf(str(mjcf_path))
+    if hardware:
+        robot = g1_interface.G1HarwareInterface("enp58s0")
+        robot.load_mjcf(str(mjcf_path)) # for computing FK
+    else:
+        robot = g1_interface.G1MujocoInterface(str(mjcf_path))
+        robot.run_async()
+        print(f"timestep: {robot.get_timestep()}")
+    
+    mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
+    mjData = mujoco.MjData(mjModel)
+    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     
     while True:
-        time.sleep(1)
         data = robot.get_data()
-        print(f"Joint positions (q): {data.q}")
-        print(f"Joint velocities (dq): {data.dq}")
-        print(f"Joint torques (tau): {data.tau}")
-        print(f"Quaternion: {data.quaternion}")
-        print(f"RPY: {data.rpy}")
-        print(f"Angular velocity (omega): {data.omega}")
+        mjData.qpos[7:] = data.q
+        mjData.qvel[6:] = data.dq
+        mujoco.mj_forward(mjModel, mjData)
+        viewer.sync()
+        time.sleep(0.01)
 
