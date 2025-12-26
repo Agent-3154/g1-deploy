@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/eigen.h>
 #include "robot_interface.hpp"
 
 namespace py = pybind11;
@@ -14,7 +15,8 @@ PYBIND11_MODULE(g1_interface, m) {
         .def_readonly("tau", &RobotData<float>::tau)
         .def_readonly("quaternion", &RobotData<float>::quaternion)
         .def_readonly("rpy", &RobotData<float>::rpy)
-        .def_readonly("omega", &RobotData<float>::omega);
+        .def_readonly("omega", &RobotData<float>::omega)
+        .def_readonly("body_positions", &RobotData<float>::body_positions);
 
     // Expose RobotData<double> as RobotData (Python's default is float64/double)
     py::class_<RobotData<double>>(m, "RobotData")
@@ -23,7 +25,8 @@ PYBIND11_MODULE(g1_interface, m) {
         .def_readonly("tau", &RobotData<double>::tau)
         .def_readonly("quaternion", &RobotData<double>::quaternion)
         .def_readonly("rpy", &RobotData<double>::rpy)
-        .def_readonly("omega", &RobotData<double>::omega);
+        .def_readonly("omega", &RobotData<double>::omega)
+        .def_readonly("body_positions", &RobotData<double>::body_positions);
 
     // Expose G1HarwareInterface (uses float)
     py::class_<G1HarwareInterface>(m, "G1HarwareInterface")

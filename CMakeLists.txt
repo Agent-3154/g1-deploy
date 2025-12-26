@@ -46,11 +46,23 @@ if(EXISTS "${MUJOCO_LOCAL_PATH}/CMakeLists.txt")
     set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "Build MuJoCo tests")
     set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "Build MuJoCo simulate application")
     
-    # Add MuJoCo as a subdirectory
+    # Add MuJoCo as a subdirectory (MuJoCo will handle Eigen3 dependency)
+    # Note: If you get an error about Eigen3::Eigen already existing, try:
+    # rm -rf build && mkdir build && cd build && cmake ..
     add_subdirectory(${MUJOCO_LOCAL_PATH} ${CMAKE_BINARY_DIR}/_deps/mujoco-build)
     
 else()
     message(FATAL_ERROR "Could not find MuJoCo in local thirdparty directory: ${MUJOCO_LOCAL_PATH}")
+endif()
+
+# Eigen3 will be provided by MuJoCo's dependencies
+# Check if Eigen3::Eigen exists after MuJoCo is configured
+if(NOT TARGET Eigen3::Eigen)
+    # If MuJoCo didn't provide Eigen3, try to find it
+    find_package(Eigen3 QUIET)
+    if(NOT Eigen3_FOUND)
+        message(WARNING "Eigen3 not found. MuJoCo should provide it via FetchContent.")
+    endif()
 endif()
 
 # Fetch Rerun SDK
@@ -82,6 +94,11 @@ target_link_libraries(g1-deploy PRIVATE
     dl
 )
 
+# Link Eigen3 to executable as well (if available)
+if(TARGET Eigen3::Eigen)
+    target_link_libraries(g1-deploy PRIVATE Eigen3::Eigen)
+endif()
+
 target_link_libraries(g1-deploy PRIVATE rerun_sdk)
 
 # Python module
@@ -91,6 +108,32 @@ target_include_directories(g1_interface PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# Link Eigen3 (provided by MuJoCo)
+# Eigen3::Eigen should automatically provide include directories when linked
+if(TARGET Eigen3::Eigen)
+    target_link_libraries(g1_interface PRIVATE Eigen3::Eigen)
+    # Verify include directories are set (they should be via INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(EIGEN3_INCLUDES Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+    if(EIGEN3_INCLUDES)
+        message(STATUS "Eigen3::Eigen include directories: ${EIGEN3_INCLUDES}")
+    else()
+        # If not set, try to get from EIGEN3_INCLUDE_DIR variable
+        if(DEFINED EIGEN3_INCLUDE_DIR)
+            target_include_directories(g1_interface PRIVATE ${EIGEN3_INCLUDE_DIR})
+            message(STATUS "Manually added Eigen3 include directory: ${EIGEN3_INCLUDE_DIR}")
+        endif()
+    endif()
+else()
+    # Fallback: try to find Eigen3 and add include directories manually
+    find_package(Eigen3 QUIET)
+    if(Eigen3_FOUND)
+        target_include_directories(g1_interface PRIVATE ${EIGEN3_INCLUDE_DIR})
+        message(STATUS "Using Eigen3 from find_package: ${EIGEN3_INCLUDE_DIR}")
+    else()
+        message(FATAL_ERROR "Eigen3::Eigen target not found. Eigen3 should be provided by MuJoCo. Try: rm -rf build && mkdir build && cd build && cmake ..")
+    endif()
+endif()
 
 target_link_libraries(g1_interface PRIVATE
     unitree_sdk2

@@ -6,6 +6,7 @@
 #include <unitree/idl/hg/LowState_.hpp>
 
 #include <mujoco/mujoco.h>
+#include <Eigen/Dense>
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -75,6 +76,11 @@ struct RobotData {
     std::array<T, 4> quaternion;
     std::array<T, 3> rpy;
     std::array<T, 3> omega;
+
+    // Body positions: [n_bodies, 3] - Eigen matrix for efficient contiguous storage and operations
+    Eigen::Matrix<T, Eigen::Dynamic, 3> body_positions;
+
+    // std::array<T, 6> body_velocities; // linear velocity and angular velocity
 };
 
 
@@ -110,6 +116,10 @@ public:
         
         std::cout << "Model loaded successfully" << std::endl;
         std::cout << "Model has " << this->model_->nq << " DOFs" << std::endl;
+        std::cout << "Model has " << this->model_->nbody << " bodies" << std::endl;
+        
+        // Initialize body_positions Eigen matrix to match number of bodies [nbody, 3]
+        this->robot_data_.body_positions.resize(this->model_->nbody, 3);
     }
     
     RobotData<T> getData() const {
@@ -123,6 +133,8 @@ class G1HarwareInterface: public G1Interface<float> {
 private:
     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
+    int lowstate_counter_ = 0;
+    int fk_counter_ = 0;
 
     void LowStateCallback(const void *message) {
         LowState_ low_state = *(const LowState_ *)message;
@@ -138,6 +150,20 @@ private:
         this->robot_data_.quaternion = low_state.imu_state().quaternion();
         this->robot_data_.rpy = low_state.imu_state().rpy();
         this->robot_data_.omega = low_state.imu_state().gyroscope();
+        lowstate_counter_ = (lowstate_counter_ + 1) % 100;
+        this->computeFK();
+    }
+
+    void computeFK() {
+        if (this->model_ && this->data_) {
+            mj_forward(this->model_, this->data_);
+            // Update body positions from data_->xpos [nbody, 3] using Eigen::Map for efficient copy
+            if (this->model_->nbody > 0) {
+                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
+                    this->data_->xpos, this->model_->nbody, 3);
+                this->robot_data_.body_positions = xpos_map.cast<float>();
+            }
+        }
     }
 public:
     G1HarwareInterface(std::string networkInterface) {
@@ -200,6 +226,13 @@ private:
                 
                 // Convert quaternion to RPY
                 quatToRPY(this->data_->qpos + 3, this->robot_data_.rpy.data());
+            }
+            
+            // Body positions: xpos [nbody, 3] - efficient copy using Eigen::Map
+            if (this->model_->nbody > 0) {
+                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
+                    this->data_->xpos, this->model_->nbody, 3);
+                this->robot_data_.body_positions = xpos_map.cast<double>();
             }
         }
     }
