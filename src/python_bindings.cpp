@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
+#include <pybind11/numpy.h>
 #include "robot_interface.hpp"
 
 namespace py = pybind11;
@@ -10,6 +11,8 @@ PYBIND11_MODULE(g1_interface, m) {
 
     // Expose RobotData<float> for hardware interface
     py::class_<RobotData<float>>(m, "RobotDataFloat")
+        .def_readonly("position", &RobotData<float>::position)
+        .def_readonly("velocity", &RobotData<float>::velocity)
         .def_readonly("q", &RobotData<float>::q)
         .def_readonly("dq", &RobotData<float>::dq)
         .def_readonly("tau", &RobotData<float>::tau)
@@ -21,6 +24,8 @@ PYBIND11_MODULE(g1_interface, m) {
 
     // Expose RobotData<double> as RobotData (Python's default is float64/double)
     py::class_<RobotData<double>>(m, "RobotData")
+        .def_readonly("position", &RobotData<double>::position)
+        .def_readonly("velocity", &RobotData<double>::velocity)
         .def_readonly("q", &RobotData<double>::q)
         .def_readonly("dq", &RobotData<double>::dq)
         .def_readonly("tau", &RobotData<double>::tau)
@@ -30,11 +35,43 @@ PYBIND11_MODULE(g1_interface, m) {
         .def_readonly("body_positions", &RobotData<double>::body_positions)
         .def_readonly("body_quaternions", &RobotData<double>::body_quaternions);
 
+    // Helper function to convert numpy array or list to std::array<float, 29>
+    // py::array_t<float> automatically accepts both numpy arrays and lists/tuples
+    auto convert_to_float_array = [](py::array_t<float> arr) -> std::array<float, 29> {
+        py::buffer_info buf = arr.request();
+        if (buf.size != 29) {
+            throw std::runtime_error("Array must have exactly 29 elements");
+        }
+        std::array<float, 29> result;
+        float* ptr = static_cast<float*>(buf.ptr);
+        std::copy(ptr, ptr + 29, result.begin());
+        return result;
+    };
+
+    // Helper function to convert numpy array or list to std::array<double, 29>
+    // py::array_t<double> automatically accepts both numpy arrays and lists/tuples
+    auto convert_to_double_array = [](py::array_t<double> arr) -> std::array<double, 29> {
+        py::buffer_info buf = arr.request();
+        if (buf.size != 29) {
+            throw std::runtime_error("Array must have exactly 29 elements");
+        }
+        std::array<double, 29> result;
+        double* ptr = static_cast<double*>(buf.ptr);
+        std::copy(ptr, ptr + 29, result.begin());
+        return result;
+    };
+
     // Expose G1HarwareInterface (uses float)
     py::class_<G1HarwareInterface>(m, "G1HarwareInterface")
         .def(py::init<std::string>(), py::arg("networkInterface"))
         .def("load_mjcf", &G1HarwareInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
-        .def("get_data", &G1HarwareInterface::getData, "Get the current robot data");
+        .def("get_data", &G1HarwareInterface::getData, "Get the current robot data")
+        .def("set_joint_stiffness", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_stiffness) {
+            self.setJointStiffness(convert_to_float_array(joint_stiffness));
+        }, py::arg("joint_stiffness"), "Set the joint stiffness (accepts list, tuple, or numpy array)")
+        .def("set_joint_damping", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_damping) {
+            self.setJointDamping(convert_to_float_array(joint_damping));
+        }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)");
 
     // Expose G1MujocoInterface (uses double)
     py::class_<G1MujocoInterface>(m, "G1MujocoInterface")
@@ -44,11 +81,19 @@ PYBIND11_MODULE(g1_interface, m) {
              "Initialize MuJoCo interface")
         .def("load_mjcf", &G1MujocoInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
         .def("get_data", &G1MujocoInterface::getData, "Get the current robot data")
+        .def("set_joint_stiffness", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_stiffness) {
+            self.setJointStiffness(convert_to_double_array(joint_stiffness));
+        }, py::arg("joint_stiffness"), "Set the joint stiffness (accepts list, tuple, or numpy array)")
+        .def("set_joint_damping", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_damping) {
+            self.setJointDamping(convert_to_double_array(joint_damping));
+        }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)")
         .def("run_async", &G1MujocoInterface::run_async, "Start asynchronous physics simulation")
         .def("stop", &G1MujocoInterface::stop, "Stop asynchronous physics simulation")
         .def("is_running", &G1MujocoInterface::is_running, "Check if physics simulation is running")
         .def("set_timestep", &G1MujocoInterface::set_timestep, py::arg("timestep"), "Set physics timestep")
         .def("get_timestep", &G1MujocoInterface::get_timestep, "Get physics timestep")
-        .def("reset", &G1MujocoInterface::reset, "Reset the simulation");
+        .def("reset", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_pos) {
+            self.reset(convert_to_double_array(joint_pos));
+        }, py::arg("joint_pos"), "Reset the simulation");
 }
 

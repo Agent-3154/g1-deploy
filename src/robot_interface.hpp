@@ -1,4 +1,3 @@
-#include "mujoco/mjspec.h"
 #include <unitree/robot/channel/channel_publisher.hpp>
 #include <unitree/robot/channel/channel_subscriber.hpp>
 #include <unitree/idl/hg/IMUState_.hpp>
@@ -13,8 +12,9 @@
 #include <mutex>
 #include <algorithm>
 #include <cmath>
+#include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
 
-
+using namespace unitree::common;
 using namespace unitree::robot;
 using namespace unitree_hg::msg::dds_;
 
@@ -69,9 +69,16 @@ inline void quatToRPY(const T quat[4], T rpy[3]) {
 // Generic RobotData template - can hold float (hardware) or double (mujoco) data
 template<typename T>
 struct RobotData {
+    std::array<T, 3> position;
+    std::array<T, 3> velocity;
+
     std::array<T, 29> q;
+    std::array<T, 29> q_target;
     std::array<T, 29> dq;
+    // std::array<T, 29> dq_target;
     std::array<T, 29> tau;
+    std::array<T, 29> joint_stiffness;
+    std::array<T, 29> joint_damping;
 
     std::array<T, 4> quaternion;
     std::array<T, 3> rpy;
@@ -132,16 +139,30 @@ public:
     RobotData<T> getData() const {
         return robot_data_;
     }
+
+    void setJointStiffness(const std::array<T, 29> &joint_stiffness) {
+        this->robot_data_.joint_stiffness = joint_stiffness;
+    }
+
+    void setJointDamping(const std::array<T, 29> &joint_damping) {
+        this->robot_data_.joint_damping = joint_damping;
+    }
 };
 
 
 // Hardware interface uses float (matching hardware data types)
 class G1HarwareInterface: public G1Interface<float> {
 private:
+    ThreadPtr lowcmd_thread_; // thread for writing lowcmd
     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
+    std::shared_ptr<unitree::robot::b2::MotionSwitcherClient> msc_;
+
     int lowstate_counter_ = 0;
     int fk_counter_ = 0;
+    uint8_t mode_machine_ = 0;
+    bool flag_lowcmd_write_ = false;
+    std::mutex mode_switch_mutex_;  // Mutex for thread-safe mode switching 
 
     void LowStateCallback(const void *message) {
         LowState_ low_state = *(const LowState_ *)message;
@@ -157,6 +178,7 @@ private:
         this->robot_data_.quaternion = low_state.imu_state().quaternion();
         this->robot_data_.rpy = low_state.imu_state().rpy();
         this->robot_data_.omega = low_state.imu_state().gyroscope();
+        this->mode_machine_ = low_state.mode_machine();
         lowstate_counter_ = (lowstate_counter_ + 1) % 100;
         
         if (lowstate_counter_ % 10 == 0) {
@@ -191,6 +213,30 @@ private:
             }
         }
     }
+
+    void LowCommandWriter() {
+        bool should_write;
+        {
+            std::lock_guard<std::mutex> lock(mode_switch_mutex_);
+            should_write = this->flag_lowcmd_write_;
+        }
+        
+        if (should_write) {
+            LowCmd_ dds_low_command;
+            dds_low_command.mode_pr() = static_cast<uint8_t>(0);
+            dds_low_command.mode_machine() = mode_machine_;
+            
+            for (int i = 0; i < this->njoints_; i++) {
+                dds_low_command.motor_cmd()[i].mode() = 1;
+                // dds_low_command.motor_cmd()[i].tau() = this->robot_data_.tau[i];
+                dds_low_command.motor_cmd()[i].q() = this->robot_data_.q_target[i];
+                // dds_low_command.motor_cmd()[i].dq() = this->robot_data_.dq[i];
+                dds_low_command.motor_cmd()[i].kp() = this->robot_data_.joint_stiffness[i];
+                dds_low_command.motor_cmd()[i].kd() = this->robot_data_.joint_damping[i];
+            }
+        }
+    }
+
 public:
     G1HarwareInterface(std::string networkInterface) {
         ChannelFactory::Instance()->Init(0, networkInterface);
@@ -198,8 +244,40 @@ public:
         lowstate_subscriber_.reset(new ChannelSubscriber<LowState_>("rt/lowstate"));
         lowstate_subscriber_->InitChannel(std::bind(&G1HarwareInterface::LowStateCallback, this, std::placeholders::_1), 1);
 
-        // lowcmd_publisher_.reset(new ChannelPublisher<LowCmd_>("rt/lowcmd"));
-        // lowcmd_publisher_->InitChannel();
+        lowcmd_publisher_.reset(new ChannelPublisher<LowCmd_>("rt/lowcmd"));
+        lowcmd_publisher_->InitChannel();
+
+        // ensure the robot is in default control
+        msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
+        msc_->SetTimeout(5.0f);
+        msc_->Init();
+        defaultControl();
+
+        // CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HarwareInterface::LowCommandWriter, this);
+    }
+    
+    void userControl() {
+        std::lock_guard<std::mutex> lock(mode_switch_mutex_);
+        // switch off the built-in control
+        std::string form, name;
+        while (msc_->CheckMode(form, name), !name.empty()) {
+            if (msc_->ReleaseMode())
+                std::cout << "Failed to switch to Release Mode\n";
+            sleep(1);
+        }
+        std::cout << "Release Mode succeeded\n";
+        this->flag_lowcmd_write_ = true;
+    }
+
+    void defaultControl() {
+        std::lock_guard<std::mutex> lock(mode_switch_mutex_);
+        // switch on the built-in control
+        int ret = msc_->SelectMode("ai");
+        if (ret != 0) {
+            std::cout << "Failed to switch to AI Mode\n";
+        }
+        std::cout << "Switching to AI Mode succeeded\n";
+        this->flag_lowcmd_write_ = false;
     }
 };
 
@@ -216,43 +294,52 @@ private:
     void step() {
         std::lock_guard<std::mutex> lock(step_mutex_);
         if (this->model_ && this->data_) {
+            // compute torques using PD control
+            // tau = joint_stiffness * (q_target - q) + joint_damping * (0 - dq)
+            if (this->njoints_ > 0 && this->model_->nu >= this->njoints_) {
+                for (int i = 0; i < this->njoints_; i++) {
+                    // Get current joint position and velocity from MuJoCo state
+                    double q_curr = this->data_->qpos[7 + i];
+                    double dq_curr = this->data_->qvel[6 + i];
+                    
+                    // Compute PD control torque
+                    double tau = this->robot_data_.joint_stiffness[i] * (this->robot_data_.q_target[i] - q_curr)
+                               - this->robot_data_.joint_damping[i] * dq_curr;
+                    
+                    // Set control input for actuator
+                    this->data_->ctrl[i] = tau;
+                }
+            }
+
             mj_step(this->model_, this->data_);
-            
+        }
+    }
+
+    void updateState() {
+        if (this->model_ && this->data_) {
             // Joint positions: qpos[7:] (skip root position + quaternion, copy up to 29 joints)
-            int num_joints = std::min(29, std::max(0, this->model_->nq - 7));
-            if (num_joints > 0 && this->model_->nq >= 7) {
+            if (this->njoints_ > 0) {
                 std::copy(this->data_->qpos + 7, 
-                         this->data_->qpos + 7 + num_joints,
+                         this->data_->qpos + 7 + this->njoints_,
                          this->robot_data_.q.begin());
             }
             
             // Joint velocities: qvel[6:] (skip root velocity, copy up to 29 joints)
-            int num_velocities = std::min(29, std::max(0, this->model_->nv - 6));
-            if (num_velocities > 0 && this->model_->nv >= 6) {
+            if (this->njoints_ > 0) {
                 std::copy(this->data_->qvel + 6,
-                         this->data_->qvel + 6 + num_velocities,
+                         this->data_->qvel + 6 + this->njoints_,
                          this->robot_data_.dq.begin());
-                
-                // Joint torques: use qfrc_actuator if available, otherwise qfrc_applied
-                // for (int i = 0; i < num_velocities; i++) {
-                //     int vel_idx = 6 + i;
-                //     if (this->model_->nu > 0 && vel_idx < this->model_->nu) {
-                //         this->robot_data_.tau[i] = this->data_->qfrc_actuator[vel_idx];
-                //     } else if (vel_idx < this->model_->nv) {
-                //         this->robot_data_.tau[i] = this->data_->qfrc_applied[vel_idx];
-                //     }
-                // }
             }
-            
+            // Position: qpos[0:3] (3 elements: x, y, z)
+            std::copy(this->data_->qpos,
+                this->data_->qpos + 3,
+                this->robot_data_.position.begin());
             // Quaternion: qpos[3:7] (4 elements: w, x, y, z)
-            if (this->model_->nq >= 7) {
-                std::copy(this->data_->qpos + 3,
-                         this->data_->qpos + 7,
-                         this->robot_data_.quaternion.begin());
-                
-                // Convert quaternion to RPY
-                quatToRPY(this->data_->qpos + 3, this->robot_data_.rpy.data());
-            }
+            std::copy(this->data_->qpos + 3,
+                this->data_->qpos + 7,
+                this->robot_data_.quaternion.begin());
+            // Convert quaternion to RPY
+            quatToRPY(this->data_->qpos + 3, this->robot_data_.rpy.data());
             
             // Body positions: xpos [nbody, 3] - efficient copy using Eigen::Map
             if (this->model_->nbody > 0) {
@@ -273,6 +360,7 @@ private:
             // Step physics at the specified timestep rate
             if (elapsed >= timestep_) {
                 step();
+                updateState();
                 last_time = current_time;
             } else {
                 // Sleep to avoid busy-waiting
@@ -340,10 +428,12 @@ public:
         return timestep_;
     }
 
-    void reset() {
+    void reset(const std::array<double, 29> &joint_pos) {
         std::lock_guard<std::mutex> lock(step_mutex_);
         if (this->model_ && this->data_) {
             mj_resetData(this->model_, this->data_);
+            std::copy(joint_pos.begin(), joint_pos.end(), this->data_->qpos + 7);
+            std::copy(joint_pos.begin(), joint_pos.end(), this->robot_data_.q_target.begin());
         }
     }
 
