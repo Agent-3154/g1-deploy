@@ -79,6 +79,7 @@ struct RobotData {
     std::array<T, 29> tau;
     std::array<T, 29> joint_stiffness;
     std::array<T, 29> joint_damping;
+    std::array<T, 3> projected_gravity;
 
     std::array<T, 4> quaternion;
     std::array<T, 3> rpy;
@@ -183,7 +184,16 @@ private:
             this->robot_data_.dq[i] = low_state.motor_state()[i].dq();
             this->robot_data_.tau[i] = low_state.motor_state()[i].tau_est();
         }
-        this->robot_data_.quaternion = low_state.imu_state().quaternion();
+        auto quaternion = low_state.imu_state().quaternion();
+        this->robot_data_.quaternion = quaternion;
+        Eigen::Quaternionf quat(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+        // Compute projected gravity: rotate gravity vector [0, 0, -1] from world to body frame
+        Eigen::Vector3f gravity_world(0.0f, 0.0f, -1.0f);
+        Eigen::Vector3f gravity_body = quat.inverse() * gravity_world;
+        this->robot_data_.projected_gravity[0] = gravity_body.x();
+        this->robot_data_.projected_gravity[1] = gravity_body.y();
+        this->robot_data_.projected_gravity[2] = gravity_body.z();
+        
         this->robot_data_.rpy = low_state.imu_state().rpy();
         this->robot_data_.omega = low_state.imu_state().gyroscope();
         this->mode_machine_ = low_state.mode_machine();
@@ -348,6 +358,17 @@ private:
                 this->robot_data_.quaternion.begin());
             // Convert quaternion to RPY
             quatToRPY(this->data_->qpos + 3, this->robot_data_.rpy.data());
+            
+            // Compute projected gravity: rotate gravity vector [0, 0, -1] from world to body frame
+            Eigen::Quaterniond quat(this->robot_data_.quaternion[0], 
+                                    this->robot_data_.quaternion[1], 
+                                    this->robot_data_.quaternion[2], 
+                                    this->robot_data_.quaternion[3]);
+            Eigen::Vector3d gravity_world(0.0, 0.0, -1.0);
+            Eigen::Vector3d gravity_body = quat.inverse() * gravity_world;
+            this->robot_data_.projected_gravity[0] = gravity_body.x();
+            this->robot_data_.projected_gravity[1] = gravity_body.y();
+            this->robot_data_.projected_gravity[2] = gravity_body.z();
             
             // Body positions: xpos [nbody, 3] - efficient copy using Eigen::Map
             if (this->model_->nbody > 0) {

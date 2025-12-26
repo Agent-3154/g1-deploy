@@ -8,8 +8,45 @@ import trimesh
 import rerun as rr
 import itertools
 import json
+import onnxruntime as ort
+import yaml
 from pathlib import Path
 from collections import OrderedDict
+from observation import Observation, Articulation
+
+
+class ONNXModule:
+    def __init__(self, onnx_path: Path | str):
+        self.onnx_path = onnx_path
+        self.session = ort.InferenceSession(onnx_path)
+        self.input_names = [input.name for input in self.session.get_inputs()]
+        self.output_names = [output.name for output in self.session.get_outputs()]
+        self.input_shapes = [input.shape for input in self.session.get_inputs()]
+        self.output_shapes = [output.shape for output in self.session.get_outputs()]
+        self.input_types = [input.type for input in self.session.get_inputs()]
+        self.output_types = [output.type for output in self.session.get_outputs()]
+
+    def __repr__(self) -> str:
+        """Return a string representation of the ONNXModule."""
+        lines = [
+            f"ONNXModule(onnx_path={self.onnx_path!r}",
+            f"  inputs: {len(self.input_names)}",
+        ]
+        for name, shape, dtype in zip(self.input_names, self.input_shapes, self.input_types):
+            lines.append(f"    {name}: shape={shape}, dtype={dtype}")
+        lines.append(f"  outputs: {len(self.output_names)}")
+        for name, shape, dtype in zip(self.output_names, self.output_shapes, self.output_types):
+            lines.append(f"    {name}: shape={shape}, dtype={dtype}")
+        lines.append(")")
+        return "\n".join(lines)
+    
+    def dummy_input(self) -> dict[str, np.ndarray]:
+        return {input.name: np.zeros(input.shape, dtype=np.float32) for input in self.session.get_inputs()}
+    
+    def forward(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        # inputs = {name: value[None, ...] for name, value in inputs.items()}
+        return self.session.run(self.output_names, inputs)
+
 
 # Add the build directory to Python path to import the compiled module
 build_dir = Path(__file__).parent.parent / "build"
@@ -61,7 +98,14 @@ if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
+    onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
+    onnx_module = ONNXModule(onnx_path)
+    print(onnx_module)
 
+    config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    
     hardware = args.hardware
     mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
     if hardware:
@@ -74,28 +118,38 @@ if __name__ == "__main__":
         robot.run_async()
         mjModel = mujoco.MjModel.from_xml_path(str(scene_path))
         print(f"timestep: {robot.get_timestep()}")
-    
+
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
-    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
 
     asset_meta_path = Path(__file__).parent.parent / "checkpoints" / "asset_meta.json"
     with open(asset_meta_path, "r") as f:
         asset_meta = json.load(f)
-    
-    isaac_joint_names = asset_meta["joint_names_isaac"]
-    default_joint_pos = np.asarray(asset_meta["default_joint_pos"])
-    joint_stiffness = np.asarray(asset_meta["stiffness"])
-    joint_damping = np.asarray(asset_meta["damping"])
-
     mujoco_joint_names = [mjModel.joint(i).name for i in range(mjModel.njnt)]
     mujoco_joint_names.remove("floating_base_joint")
+    robot = Articulation(robot, asset_meta)
 
-    isaac2mujoco = [isaac_joint_names.index(name) for name in mujoco_joint_names]
-    mujoco2isaac = [mujoco_joint_names.index(name) for name in isaac_joint_names]
+    observation_config = config["observation"]
+    observation_groups = {}
+    for group_name, group_config in observation_config.items():
+        observation_groups[group_name] = []
+        for observation_name, observation_config in group_config.items():
+            observation_class = Observation.registry[observation_name]
+            observation = observation_class(robot)
+            observation_groups[group_name].append(observation)
     
-    robot.set_joint_stiffness(joint_stiffness[isaac2mujoco])
-    robot.set_joint_damping(joint_damping[isaac2mujoco])
+    def compute_observations():
+        results = {}
+        for group_name, group_observations in observation_groups.items():
+            group_results = []
+            for observation in group_observations:
+                group_results.append(observation())
+            results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
+        return results
+    
+    inputs = onnx_module.dummy_input()
+    inputs.update(compute_observations())
+    outputs = onnx_module.forward(inputs)
 
     if hardware:
         meshes = extract_meshes(mjModel)
@@ -113,18 +167,16 @@ if __name__ == "__main__":
                 ),
             )
     
+    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     for i in itertools.count():
-        data = robot.get_data()
-        mjData.qpos[0:3] = data.position
-        mjData.qpos[3:7] = data.quaternion
-        mjData.qpos[7:] = data.q
-        mjData.qvel[6:] = data.dq
+        mjData.qpos[0:3] = robot.data.position
+        mjData.qpos[3:7] = robot.data.quaternion
+        mjData.qpos[7:] = robot.data.q
+        mjData.qvel[6:] = robot.data.dq
         mujoco.mj_forward(mjModel, mjData)
         
-        robot.write_joint_position_target(default_joint_pos[isaac2mujoco])
-
         if i % 1000 == 0:
-            robot.reset(joint_pos=default_joint_pos[isaac2mujoco])
+            robot.reset()
 
         # rr.set_time("step", timestamp=step)
         # # xpos = mjData.xpos[1:]
