@@ -5,14 +5,46 @@
 #include "robot_interface.hpp"
 
 namespace py = pybind11;
+using namespace unitree::common;
 
 PYBIND11_MODULE(g1_interface, m) {
     m.doc() = "Python bindings for G1Interface";
 
+    // Expose GamepadState::ButtonState
+    py::class_<GamepadState::ButtonState>(m, "ButtonState")
+        .def_readonly("pressed", &GamepadState::ButtonState::pressed)
+        .def_readonly("on_press", &GamepadState::ButtonState::on_press)
+        .def_readonly("on_release", &GamepadState::ButtonState::on_release);
+
+    // Expose GamepadState
+    py::class_<GamepadState>(m, "GamepadState")
+        .def_readonly("lx", &GamepadState::lx)
+        .def_readonly("rx", &GamepadState::rx)
+        .def_readonly("ry", &GamepadState::ry)
+        .def_readonly("ly", &GamepadState::ly)
+        .def_readonly("l2", &GamepadState::l2)
+        .def_readonly("R1", &GamepadState::R1)
+        .def_readonly("L1", &GamepadState::L1)
+        .def_readonly("start", &GamepadState::start)
+        .def_readonly("select", &GamepadState::select)
+        .def_readonly("R2", &GamepadState::R2)
+        .def_readonly("L2", &GamepadState::L2)
+        .def_readonly("F1", &GamepadState::F1)
+        .def_readonly("F2", &GamepadState::F2)
+        .def_readonly("A", &GamepadState::A)
+        .def_readonly("B", &GamepadState::B)
+        .def_readonly("X", &GamepadState::X)
+        .def_readonly("Y", &GamepadState::Y)
+        .def_readonly("up", &GamepadState::up)
+        .def_readonly("right", &GamepadState::right)
+        .def_readonly("down", &GamepadState::down)
+        .def_readonly("left", &GamepadState::left);
+
     // Expose RobotData<float> for hardware interface
     py::class_<RobotData<float>>(m, "RobotDataFloat")
-        .def_readonly("position", &RobotData<float>::position)
-        .def_readonly("velocity", &RobotData<float>::velocity)
+        .def_readonly("root_pos_w", &RobotData<float>::root_pos_w)
+        .def_readonly("root_lin_vel_w", &RobotData<float>::root_lin_vel_w)
+        .def_readonly("root_ang_vel_w", &RobotData<float>::root_ang_vel_w)
         .def_readonly("q", &RobotData<float>::q)
         .def_readonly("dq", &RobotData<float>::dq)
         .def_readonly("tau", &RobotData<float>::tau)
@@ -25,8 +57,9 @@ PYBIND11_MODULE(g1_interface, m) {
 
     // Expose RobotData<double> as RobotData (Python's default is float64/double)
     py::class_<RobotData<double>>(m, "RobotData")
-        .def_readonly("position", &RobotData<double>::position)
-        .def_readonly("velocity", &RobotData<double>::velocity)
+        .def_readonly("root_pos_w", &RobotData<double>::root_pos_w)
+        .def_readonly("root_lin_vel_w", &RobotData<double>::root_lin_vel_w)
+        .def_readonly("root_ang_vel_w", &RobotData<double>::root_ang_vel_w)
         .def_readonly("q", &RobotData<double>::q)
         .def_readonly("dq", &RobotData<double>::dq)
         .def_readonly("tau", &RobotData<double>::tau)
@@ -79,7 +112,8 @@ PYBIND11_MODULE(g1_interface, m) {
         }, py::arg("joint_position_target"), "Write the joint position target (accepts list, tuple, or numpy array)")
         .def("write_joint_velocity_target", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_velocity_target) {
             self.writeJointVelocityTarget(convert_to_float_array(joint_velocity_target));
-        }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)");
+        }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)")
+        .def("get_gamepad", &G1HarwareInterface::getGamepadState, "Get the current gamepad state");
 
     // Expose G1MujocoInterface (uses double)
     py::class_<G1MujocoInterface>(m, "G1MujocoInterface")

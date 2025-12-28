@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
+#include "gamepad.hpp"
 
 using namespace unitree::common;
 using namespace unitree::robot;
@@ -66,11 +67,33 @@ inline void quatToRPY(const T quat[4], T rpy[3]) {
     rpy[2] = std::atan2(siny_cosp, cosy_cosp);
 }
 
+// Gamepad state structure for Python exposure
+struct GamepadState {
+    // Analog stick values
+    float lx = 0.0f;
+    float rx = 0.0f;
+    float ry = 0.0f;
+    float ly = 0.0f;
+    float l2 = 0.0f;
+    
+    // Button states: pressed, on_press, on_release
+    struct ButtonState {
+        bool pressed = false;
+        bool on_press = false;
+        bool on_release = false;
+    };
+    
+    ButtonState R1, L1, start, select, R2, L2, F1, F2;
+    ButtonState A, B, X, Y;
+    ButtonState up, right, down, left;
+};
+
 // Generic RobotData template - can hold float (hardware) or double (mujoco) data
 template<typename T>
 struct RobotData {
-    std::array<T, 3> position;
-    std::array<T, 3> velocity;
+    std::array<T, 3> root_pos_w;
+    std::array<T, 3> root_lin_vel_w;
+    std::array<T, 3> root_ang_vel_w;
 
     std::array<T, 29> q;
     std::array<T, 29> q_target;
@@ -135,6 +158,8 @@ public:
         // Initialize body_positions Eigen matrix to match number of bodies [nbody, 3]
         this->robot_data_.body_positions.resize(this->nbodies_, 3);
         this->robot_data_.body_quaternions.resize(this->nbodies_, 4);
+        
+        mj_forward(this->model_, this->data_);
     }
     
     RobotData<T> getData() const {
@@ -162,16 +187,25 @@ public:
 // Hardware interface uses float (matching hardware data types)
 class G1HarwareInterface: public G1Interface<float> {
 private:
+    enum class ControlState {
+        BUILTIN_CONTROL,
+        USER_CONTROL,
+        DAMPING_MODE
+    };
+    
     ThreadPtr lowcmd_thread_; // thread for writing lowcmd
     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
     std::shared_ptr<unitree::robot::b2::MotionSwitcherClient> msc_;
+    Gamepad gamepad_;
+    REMOTE_DATA_RX rx_;
+    ControlState control_state_ = ControlState::BUILTIN_CONTROL;
 
     int lowstate_counter_ = 0;
     int fk_counter_ = 0;
     uint8_t mode_machine_ = 0;
-    bool flag_lowcmd_write_ = false;
-    std::mutex mode_switch_mutex_;  // Mutex for thread-safe mode switching 
+    std::mutex mode_switch_mutex_;  // Mutex for thread-safe mode switching
+    std::mutex gamepad_mutex_;  // Mutex for thread-safe gamepad access 
 
     void LowStateCallback(const void *message) {
         LowState_ low_state = *(const LowState_ *)message;
@@ -198,6 +232,16 @@ private:
         this->robot_data_.omega = low_state.imu_state().gyroscope();
         this->mode_machine_ = low_state.mode_machine();
         lowstate_counter_ = (lowstate_counter_ + 1) % 100;
+
+        // update gamepad
+        {
+            std::lock_guard<std::mutex> lock(gamepad_mutex_);
+            memcpy(rx_.buff, &low_state.wireless_remote()[0], 40);
+            gamepad_.update(rx_.RF_RX);
+        }
+        
+        // Update control FSM based on gamepad input
+        updateControlFSM();
         
         if (lowstate_counter_ % 10 == 0) {
             this->computeFK();
@@ -233,24 +277,30 @@ private:
     }
 
     void LowCommandWriter() {
-        bool should_write;
-        {
-            std::lock_guard<std::mutex> lock(mode_switch_mutex_);
-            should_write = this->flag_lowcmd_write_;
-        }
-        
-        if (should_write) {
+        if (control_state_ == ControlState::USER_CONTROL) {
             LowCmd_ dds_low_command;
             dds_low_command.mode_pr() = static_cast<uint8_t>(0);
             dds_low_command.mode_machine() = mode_machine_;
             
             for (int i = 0; i < this->njoints_; i++) {
-                dds_low_command.motor_cmd()[i].mode() = 1;
+                dds_low_command.motor_cmd()[i].mode() = 1; // 1:Enable, 0:Disable
                 // dds_low_command.motor_cmd()[i].tau() = this->robot_data_.tau[i];
                 dds_low_command.motor_cmd()[i].q() = this->robot_data_.q_target[i];
                 // dds_low_command.motor_cmd()[i].dq() = this->robot_data_.dq[i];
                 dds_low_command.motor_cmd()[i].kp() = this->robot_data_.joint_stiffness[i];
                 dds_low_command.motor_cmd()[i].kd() = this->robot_data_.joint_damping[i];
+            }
+        } else if (control_state_ == ControlState::DAMPING_MODE) {
+            LowCmd_ dds_low_command;
+            dds_low_command.mode_pr() = static_cast<uint8_t>(0);
+            dds_low_command.mode_machine() = mode_machine_;
+
+            for (int i = 0; i < this->njoints_; i++) {
+                dds_low_command.motor_cmd()[i].mode() = 1; // 1:Enable, 0:Disable
+                dds_low_command.motor_cmd()[i].q() = this->robot_data_.q[i];
+                dds_low_command.motor_cmd()[i].dq() = 0.0f;
+                dds_low_command.motor_cmd()[i].kp() = 0.0f;
+                dds_low_command.motor_cmd()[i].kd() = 4.0f;
             }
         }
     }
@@ -269,12 +319,12 @@ public:
         msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
         msc_->SetTimeout(5.0f);
         msc_->Init();
-        defaultControl();
+        toDefaultControl();
 
         // CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HarwareInterface::LowCommandWriter, this);
     }
     
-    void userControl() {
+    void toUserControl() {
         std::lock_guard<std::mutex> lock(mode_switch_mutex_);
         // switch off the built-in control
         std::string form, name;
@@ -283,11 +333,17 @@ public:
                 std::cout << "Failed to switch to Release Mode\n";
             sleep(1);
         }
+        // set a zero stiffness and small damping as fallback
+        // they should be overwritten by the user control shortly
+        for (int i = 0; i < this->njoints_; i++) {
+            this->robot_data_.joint_stiffness[i] = 0.0f;
+            this->robot_data_.joint_damping[i] = 4.0f;
+        }
         std::cout << "Release Mode succeeded\n";
-        this->flag_lowcmd_write_ = true;
+        this->control_state_ = ControlState::USER_CONTROL;
     }
 
-    void defaultControl() {
+    void toDefaultControl() {
         std::lock_guard<std::mutex> lock(mode_switch_mutex_);
         // switch on the built-in control
         int ret = msc_->SelectMode("ai");
@@ -295,7 +351,75 @@ public:
             std::cout << "Failed to switch to AI Mode\n";
         }
         std::cout << "Switching to AI Mode succeeded\n";
-        this->flag_lowcmd_write_ = false;
+        this->control_state_ = ControlState::BUILTIN_CONTROL;
+    }
+    
+    void toDampingMode() {
+        std::lock_guard<std::mutex> lock(mode_switch_mutex_);
+        this->control_state_ = ControlState::DAMPING_MODE;
+        std::cout << "Switching to Damping Mode\n";
+    }
+    
+    void updateControlFSM() {
+        // Read gamepad state atomically
+        bool l1_r1, l2_b;
+        ControlState current_state;
+        {
+            std::lock_guard<std::mutex> lock(gamepad_mutex_);
+            l1_r1 = gamepad_.L1.pressed && gamepad_.R1.pressed;
+            l2_b = gamepad_.L2.pressed && gamepad_.B.pressed;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mode_switch_mutex_);
+            current_state = control_state_;
+        }
+        
+        // Check for state transitions (avoid nested locks)
+        if (l1_r1 && current_state == ControlState::BUILTIN_CONTROL) {
+            toUserControl();
+        } else if (l2_b && current_state == ControlState::USER_CONTROL) {
+            toDampingMode();
+        } else if (l1_r1 && current_state == ControlState::DAMPING_MODE) {
+            toDefaultControl();
+        }
+    }
+    
+    GamepadState getGamepadState() {
+        std::lock_guard<std::mutex> lock(gamepad_mutex_);
+        GamepadState state;
+        
+        // Copy analog values
+        state.lx = gamepad_.lx;
+        state.rx = gamepad_.rx;
+        state.ry = gamepad_.ry;
+        state.ly = gamepad_.ly;
+        state.l2 = gamepad_.l2;
+        
+        // Copy button states
+        auto copyButton = [](const unitree::common::Button& src, GamepadState::ButtonState& dst) {
+            dst.pressed = src.pressed;
+            dst.on_press = src.on_press;
+            dst.on_release = src.on_release;
+        };
+        
+        copyButton(gamepad_.R1, state.R1);
+        copyButton(gamepad_.L1, state.L1);
+        copyButton(gamepad_.start, state.start);
+        copyButton(gamepad_.select, state.select);
+        copyButton(gamepad_.R2, state.R2);
+        copyButton(gamepad_.L2, state.L2);
+        copyButton(gamepad_.F1, state.F1);
+        copyButton(gamepad_.F2, state.F2);
+        copyButton(gamepad_.A, state.A);
+        copyButton(gamepad_.B, state.B);
+        copyButton(gamepad_.X, state.X);
+        copyButton(gamepad_.Y, state.Y);
+        copyButton(gamepad_.up, state.up);
+        copyButton(gamepad_.right, state.right);
+        copyButton(gamepad_.down, state.down);
+        copyButton(gamepad_.left, state.left);
+        
+        return state;
     }
 };
 
@@ -307,7 +431,7 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> should_stop_;
     std::mutex step_mutex_;
-    double timestep_;  // Physics timestep in seconds
+    double timestep_;  // Physics timestep in ssereconds
     
     void step() {
         std::lock_guard<std::mutex> lock(step_mutex_);
@@ -351,13 +475,22 @@ private:
             // Position: qpos[0:3] (3 elements: x, y, z)
             std::copy(this->data_->qpos,
                 this->data_->qpos + 3,
-                this->robot_data_.position.begin());
+                this->robot_data_.root_pos_w.begin());
             // Quaternion: qpos[3:7] (4 elements: w, x, y, z)
             std::copy(this->data_->qpos + 3,
                 this->data_->qpos + 7,
                 this->robot_data_.quaternion.begin());
             // Convert quaternion to RPY
             quatToRPY(this->data_->qpos + 3, this->robot_data_.rpy.data());
+            
+            // velocity: qvel[0:3] (3 elements: x, y, z)
+            std::copy(this->data_->qvel,
+                this->data_->qvel + 3,
+                this->robot_data_.root_lin_vel_w.begin());
+            // angular velocity: qvel[3:6] (3 elements: x, y, z)
+            std::copy(this->data_->qvel + 3,
+                this->data_->qvel + 6,
+                this->robot_data_.root_ang_vel_w.begin());
             
             // Compute projected gravity: rotate gravity vector [0, 0, -1] from world to body frame
             Eigen::Quaterniond quat(this->robot_data_.quaternion[0], 
