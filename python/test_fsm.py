@@ -14,8 +14,8 @@ import torch
 from pathlib import Path
 from collections import OrderedDict
 from observation import Observation, Articulation
+from policy import FSM, SkillA, SkillB
 from timerfd import Timer
-from policy import ONNXModule
 
 
 # Add the build directory to Python path to import the compiled module
@@ -68,82 +68,96 @@ if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
-    onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
-    config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
-    onnx_module = ONNXModule(onnx_path)
-    print(onnx_module)
+    # onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
+    # onnx_module = ONNXModule(onnx_path)
+    # print(onnx_module)
     # config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
 
-    # torchscript_path = Path(__file__).parent.parent / "checkpoints" / "policy_29dof.pt"
-    # torchscript_module = TorchJitModule(torchscript_path)
-
-    with open(config_path, "r") as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    
     hardware = args.hardware
     mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
     if hardware:
-        robot = g1_interface.G1HarwareInterface("enp58s0")
-        robot.load_mjcf(str(mjcf_path)) # for computing FK
+        robot_interface = g1_interface.G1HarwareInterface("enp58s0")
+        robot_interface.load_mjcf(str(mjcf_path))
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
         scene_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
-        robot = g1_interface.G1MujocoInterface(str(scene_path))
-        robot.run_async()
+        robot_interface = g1_interface.G1MujocoInterface(str(scene_path))
+        robot_interface.run_async()
         mjModel = mujoco.MjModel.from_xml_path(str(scene_path))
-        print(f"timestep: {robot.get_timestep()}")
+        print(f"timestep: {robot_interface.get_timestep()}")
 
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
 
+    asset_meta_path = Path(__file__).parent.parent / "checkpoints" / "asset_meta.json"
+    with open(asset_meta_path, "r") as f:
+        asset_meta = json.load(f)
+    config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+
     mujoco_joint_names = [mjModel.joint(i).name for i in range(mjModel.njnt)]
     mujoco_joint_names.remove("floating_base_joint")
     robot = Articulation(
-        robot,
+        robot_interface,
         config["action"]["action_scaling"],
-        config["default_joint_pos"],
-        config["stiffness"],
-        config["damping"],
+        asset_meta["default_joint_pos"],
+        asset_meta["stiffness"],
+        asset_meta["damping"],
     )
 
-    observation_config = config["observation"]
-    observation_groups = {}
-    for group_name, group_config in observation_config.items():
-        observation_groups[group_name] = []
-        for observation_name, observation_config in group_config.items():
-            observation_class = Observation.registry[observation_name]
-            if observation_config is None:
-                observation = observation_class(robot)
-            else:
-                observation = observation_class(robot, **observation_config)
-            observation_groups[group_name].append(observation)
-    
-    def compute_observations():
-        results = {}
-        for group_name, group_observations in observation_groups.items():
-            group_results = []
-            for observation in group_observations:
-                group_results.append(observation())
-            results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
-        return results
-
-    if hardware:
-        meshes = extract_meshes(mjModel)
-        print(len(meshes))
-        rr.init("g1", recording_id="g1")
-        rr.spawn()
-        rr.set_time("step", timestamp=0.0)
-        for body_name, mesh in meshes.items():
-            rr.log(
-                f"robot/{body_name}",
-                rr.Mesh3D(
-                    vertex_positions=mesh.vertices,
-                    triangle_indices=mesh.faces,
-                    vertex_normals=mesh.vertex_normals,
-                ),
+    fsm = FSM(
+        policies = {
+            "sA": SkillA(
+                "sA", 
+                robot, 
+                Path(__file__).parent.parent / "cfg" / "loco.yaml", 
+                Path(__file__).parent.parent / "checkpoints" / "policy-12-28_17-02.onnx"
+            ),
+            "sB": SkillB(
+                "sB", 
+                robot, 
+                Path(__file__).parent.parent / "cfg" / "loco.yaml", 
+                Path(__file__).parent.parent / "checkpoints" / "policy-12-28_17-02.onnx"
             )
+        },
+        start_policy_name = "sA"
+    )
     
-    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
+    def key_callback(keycode):
+        try:
+            key = chr(keycode).upper()
+            if key == 'A':
+                print("Key A pressed: switching to SkillA")
+                fsm.set_next_policy("sA")
+            elif key == 'B':
+                print("Key B pressed: switching to SkillB")
+                fsm.set_next_policy("sB")
+        except:
+            pass
+
+    viewer = mujoco.viewer.launch_passive(mjModel, mjData, key_callback=key_callback)
+
+    '''to be replaced with mujoco viewer key callback'''
+    import sys
+    import select
+    import termios
+    import tty
+
+    # def get_key():
+    #     fd = sys.stdin.fileno()
+    #     old_settings = termios.tcgetattr(fd)
+    #     try:
+    #         tty.setraw(fd)
+    #         [i, _, _] = select.select([sys.stdin], [], [], 0.01)
+    #         if i:
+    #             key = sys.stdin.read(1)
+    #         else:
+    #             key = None
+    #     finally:
+    #         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    #     return key
+
     timer = Timer(0.02)
     for i in itertools.count():
         mjData.qpos[0:3] = robot.data.root_pos_w
@@ -152,24 +166,18 @@ if __name__ == "__main__":
         mjData.qvel[6:] = robot.data.dq
         mujoco.mj_forward(mjModel, mjData)
 
-        inputs = onnx_module.dummy_input()
-        inputs.update(compute_observations())
-        action = onnx_module.forward(inputs)["action"]
+        # key = get_key()
+        # if key == 'a':
+        #     fsm.set_next_policy("sA")
+        # elif key == 'b':
+        #     fsm.set_next_policy("sB")
+
+        action = fsm.run()
         robot.apply_action(action)
 
         if i % 500 == 0:
             robot.reset()
 
-        # rr.set_time("step", timestamp=step)
-        # # xpos = mjData.xpos[1:]
-        # # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]
-        # xpos = np.asarray(data.body_positions)[1:]
-        # xquat = np.asarray(data.body_quaternions)[1:, [1, 2, 3, 0]]
-        # for i, (body_name, mesh) in enumerate(meshes.items()):
-        #     rr.log(
-        #         f"robot/{body_name}",
-        #         rr.Transform3D(translation=xpos[i], quaternion=xquat[i])
-        #     )
         viewer.sync()
         timer.sleep()
 

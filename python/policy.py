@@ -72,10 +72,10 @@ class Policy:
                     observation = observation_class(robot, **observation_config)
                 self.observation_groups[group_name].append(observation)
 
-        if model_path.endswith(".pt"):
+        if str(model_path).endswith(".pt"):
             self.module = TorchJitModule(model_path)
             self.module_type = "torch"
-        elif model_path.endswith(".onnx"):
+        elif str(model_path).endswith(".onnx"):
             self.module = ONNXModule(model_path)
             self.module_type = "onnxruntime"
             self.output_key = output_key
@@ -117,19 +117,19 @@ class Policy:
         return None
 
 class SkillA(Policy):
-    def __init__(self, name='sA', model=""):
-        super().__init__(name, model)
+    def __init__(self, name, robot, config_path, model_path, output_key="action"):
+        super().__init__(name, robot, config_path, model_path, output_key)
         self.count = 0
 
     def enter(self):
         print("Entering SkillA")
         self.count = 0
 
-    def run(self, observations: dict[str, np.ndarray]) -> np.ndarray:
+    def run(self) -> np.ndarray:
         self.count += 1
         if self.count % 50 == 0:
             print(f"SkillA running, step {self.count}")
-        return super().run(observations)
+        return super().run()
 
     def checkchange(self):
         # Example: auto-switch to SkillB after 500 steps
@@ -138,19 +138,19 @@ class SkillA(Policy):
         return None
 
 class SkillB(Policy):
-    def __init__(self, name='sB', model=""):
-        super().__init__(name, model)
+    def __init__(self, name, robot, config_path, model_path, output_key="action"):
+        super().__init__(name, robot, config_path, model_path, output_key)
         self.count = 0
 
     def enter(self):
         print("Entering SkillB")
         self.count = 0
 
-    def run(self, observations: dict[str, np.ndarray]) -> np.ndarray:
+    def run(self) -> np.ndarray:
         self.count += 1
         if self.count % 50 == 0:
             print(f"SkillB running, step {self.count}")
-        return super().run(observations)
+        return super().run()
 
     def checkchange(self):
         return None
@@ -190,7 +190,7 @@ class FSM:
         else:
             print(f"FSM: Policy {policy_name} not found")
 
-    def run(self, observations: dict[str, np.ndarray]) -> np.ndarray:
+    def run(self) -> np.ndarray:
         # Priority: set_next_policy (external) > current_policy.checkchange (internal)
         target_policy_name = self.next_policy_name or self.current_policy.checkchange()
 
@@ -202,4 +202,4 @@ class FSM:
             self.current_policy.enter()
             self.next_policy_name = None # Reset after transition
 
-        return self.current_policy.run(observations)
+        return self.current_policy.run()

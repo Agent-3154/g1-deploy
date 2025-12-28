@@ -56,23 +56,33 @@ class Articulation:
     def __init__(
         self,
         robot,
-        action_scaling: dict,
-        default_joint_pos: dict,
-        stiffness: dict,
-        damping: dict,
+        action_scaling: dict | np.ndarray,
+        default_joint_pos: dict | np.ndarray,
+        stiffness: dict | np.ndarray,
+        damping: dict | np.ndarray,
     ):
         self.robot = robot
         
-        self.default_joint_pos = np.zeros(29, dtype=np.float32)
-        self.joint_stiffness = np.zeros(29, dtype=np.float32)
-        self.joint_damping = np.zeros(29, dtype=np.float32)
-
-        ids, _, default_joint_pos = resolve_matching_names_values(default_joint_pos, JOINT_NAMES_ISAAC)
-        self.default_joint_pos[ids] = np.array(default_joint_pos, dtype=np.float32)
-        ids, _, joint_stiffness = resolve_matching_names_values(stiffness, JOINT_NAMES_ISAAC)
-        self.joint_stiffness[ids] = np.array(joint_stiffness, dtype=np.float32)
-        ids, _, joint_damping = resolve_matching_names_values(damping, JOINT_NAMES_ISAAC)
-        self.joint_damping[ids] = np.array(joint_damping, dtype=np.float32)
+        if isinstance(default_joint_pos, dict):
+            self.default_joint_pos = np.zeros(29, dtype=np.float32)
+            ids, _, default_joint_pos = resolve_matching_names_values(default_joint_pos, JOINT_NAMES_ISAAC)
+            self.default_joint_pos[ids] = np.array(default_joint_pos, dtype=np.float32)
+        else:
+            self.default_joint_pos = np.array(default_joint_pos, dtype=np.float32)
+        
+        if isinstance(stiffness, dict):
+            self.joint_stiffness = np.zeros(29, dtype=np.float32)
+            ids, _, stiffness = resolve_matching_names_values(stiffness, JOINT_NAMES_ISAAC)
+            self.joint_stiffness[ids] = np.array(stiffness, dtype=np.float32)
+        else:
+            self.joint_stiffness = np.array(stiffness, dtype=np.float32)
+        
+        if isinstance(damping, dict):
+            self.joint_damping = np.zeros(29, dtype=np.float32)
+            ids, _, damping = resolve_matching_names_values(damping, JOINT_NAMES_ISAAC)
+            self.joint_damping[ids] = np.array(damping, dtype=np.float32)
+        else:
+            self.joint_damping = np.array(damping, dtype=np.float32)
 
         self.joint_indexing = Indexing(
             mujoco2isaac = [JOINT_NAMES_MUJOCO.index(name) for name in JOINT_NAMES_ISAAC],
@@ -85,38 +95,6 @@ class Articulation:
         
         self.robot.set_joint_stiffness(self.joint_stiffness[self.joint_indexing.isaac2mujoco])
         self.robot.set_joint_damping(self.joint_damping[self.joint_indexing.isaac2mujoco])
-
-        # self.action_joint_ids, _ = resolve_matching_names(
-        #     [   'left_hip_pitch_joint', 
-        #         'right_hip_pitch_joint', 
-        #         'waist_yaw_joint', 
-        #         'left_hip_roll_joint', 
-        #         'right_hip_roll_joint', 
-        #         'left_hip_yaw_joint', 
-        #         'right_hip_yaw_joint', 
-        #         'left_knee_joint', 
-        #         'right_knee_joint', 
-        #         'left_shoulder_pitch_joint', 
-        #         'right_shoulder_pitch_joint', 
-        #         'left_ankle_pitch_joint', 
-        #         'right_ankle_pitch_joint', 
-        #         'left_shoulder_roll_joint', 
-        #         'right_shoulder_roll_joint', 
-        #         'left_ankle_roll_joint', 
-        #         'right_ankle_roll_joint', 
-        #         'left_shoulder_yaw_joint', 
-        #         'right_shoulder_yaw_joint', 
-        #         'left_elbow_joint', 
-        #         'right_elbow_joint', 
-        #         'left_wrist_roll_joint', 
-        #         'right_wrist_roll_joint', 
-        #         'left_wrist_pitch_joint', 
-        #         'right_wrist_pitch_joint', 
-        #         'left_wrist_yaw_joint', 
-        #         'right_wrist_yaw_joint'
-        #     ],
-        #     joint_names_isaac
-        # )
         
         self.action_joint_ids, self.action_joint_names, self.action_scaling = resolve_matching_names_values(action_scaling, JOINT_NAMES_ISAAC)
         self.action_scaling = np.array(self.action_scaling, dtype=np.float32)
@@ -148,7 +126,8 @@ class Articulation:
         self.t += 1
 
     def reset(self):
-        self.robot.write_joint_position_target(self.default_joint_pos[self.joint_indexing.isaac2mujoco])
+        self.robot.reset(self.default_joint_pos[self.joint_indexing.isaac2mujoco])
+        # self.robot.write_joint_position_target(self.default_joint_pos[self.joint_indexing.isaac2mujoco])
         self.t = 0
 
     @property
@@ -292,15 +271,9 @@ class body_height(Observation):
 
 
 class body_pos_b(Observation):
-    def __init__(self, articulation:Articulation):
+    def __init__(self, articulation: Articulation, body_names: List[str]):
         super().__init__(articulation)
-        body_names = [  "left_hip_pitch_link", "right_hip_pitch_link", 
-                        "left_knee_link", "right_knee_link", 
-                        "left_ankle_roll_link", "right_ankle_roll_link", 
-                        "left_shoulder_roll_link", "right_shoulder_roll_link", 
-                        "left_elbow_link", "right_elbow_link", 
-                        "left_wrist_yaw_link", "right_wrist_yaw_link"]
-        self.body_indices, self.body_names = resolve_matching_names(body_names, BODY_NAMES_ISAAC)
+        self.body_indices = self.articulation.find_bodies(body_names)[0]
 
     def compute(self):
         root_pos_w = self.articulation.root_pos_w
@@ -316,20 +289,10 @@ class ref_root_quat_w(Observation):
         return ref_motion.root_quat_w[t]
 
 class ref_kp_pos_b(Observation):
-    def __init__(self, articulation):
+    def __init__(self, articulation: Articulation, body_names: List[str]):
         super().__init__(articulation)
         self.ref_motion = self.articulation.ref_motion
-        body_names =  [
-            "pelvis",
-            "left_hip_pitch_link", "right_hip_pitch_link", 
-            "left_knee_link", "right_knee_link", 
-            "left_ankle_roll_link", "right_ankle_roll_link", 
-            "left_shoulder_roll_link", "right_shoulder_roll_link", 
-            "left_elbow_link", "right_elbow_link", 
-            "left_wrist_yaw_link", "right_wrist_yaw_link"
-        ]
-        self.body_indices, self.body_names = resolve_matching_names(body_names, BODY_NAMES_ISAAC)
-
+        self.body_indices = self.articulation.find_bodies(body_names)[0]
 
     def compute(self):
         t = min(self.articulation.t, self.ref_motion.motion_length)
@@ -368,7 +331,7 @@ class loco_gravity_orientation(Observation):
 
 class loco_cmd(Observation):
     def compute(self):
-        return np.array([0.5, 0., 0.])
+        return np.array([0., 0., 0.])
 
 class loco_joint_pos(Observation):
     def compute(self):

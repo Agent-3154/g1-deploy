@@ -13,12 +13,18 @@
 #include <algorithm>
 #include <cmath>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
+#include <unitree/robot/g1/loco/g1_loco_api.hpp>
+#include <unitree/robot/g1/loco/g1_loco_client.hpp>
+
 #include "gamepad.hpp"
 
 using namespace unitree::common;
 using namespace unitree::robot;
 using namespace unitree_hg::msg::dds_;
 
+const std::array<int, 6> wrist_joint_indices = {23, 24, 25, 26, 27, 28};
+const float default_wrist_stiffness = 16.0f;
+const float default_wrist_damping = 2.0f;
 
 inline uint32_t Crc32Core(uint32_t *ptr, uint32_t len) {
     uint32_t xbit = 0;
@@ -112,6 +118,14 @@ struct RobotData {
     Eigen::Matrix<T, Eigen::Dynamic, 3> body_positions;
     Eigen::Matrix<T, Eigen::Dynamic, 4> body_quaternions;
     // std::array<T, 6> body_velocities; // linear velocity and angular velocity
+    bool is_user_control_;
+};
+
+
+enum class ControlState {
+    BUILTIN_CONTROL,
+    USER_CONTROL,
+    DAMPING_MODE
 };
 
 
@@ -122,6 +136,7 @@ protected:
     RobotData<T> robot_data_;
     mjModel *model_;
     mjData *data_;
+    ControlState control_state_ = ControlState::BUILTIN_CONTROL;
 public:
     int njoints_;
     int nbodies_;
@@ -163,6 +178,7 @@ public:
     }
     
     RobotData<T> getData() const {
+        robot_data_.is_user_control_ = (this->control_state_ == ControlState::USER_CONTROL);
         return robot_data_;
     }
 
@@ -187,19 +203,16 @@ public:
 // Hardware interface uses float (matching hardware data types)
 class G1HarwareInterface: public G1Interface<float> {
 private:
-    enum class ControlState {
-        BUILTIN_CONTROL,
-        USER_CONTROL,
-        DAMPING_MODE
-    };
     
     ThreadPtr lowcmd_thread_; // thread for writing lowcmd
     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
-    std::shared_ptr<unitree::robot::b2::MotionSwitcherClient> msc_;
+
+    std::shared_ptr<b2::MotionSwitcherClient> msc_;
+    std::shared_ptr<g1::LocoClient> loco_client_;
+
     Gamepad gamepad_;
     REMOTE_DATA_RX rx_;
-    ControlState control_state_ = ControlState::BUILTIN_CONTROL;
 
     int lowstate_counter_ = 0;
     int fk_counter_ = 0;
@@ -284,12 +297,14 @@ private:
             
             for (int i = 0; i < this->njoints_; i++) {
                 dds_low_command.motor_cmd()[i].mode() = 1; // 1:Enable, 0:Disable
-                // dds_low_command.motor_cmd()[i].tau() = this->robot_data_.tau[i];
+                dds_low_command.motor_cmd()[i].tau() = 0.0f;
                 dds_low_command.motor_cmd()[i].q() = this->robot_data_.q_target[i];
-                // dds_low_command.motor_cmd()[i].dq() = this->robot_data_.dq[i];
+                dds_low_command.motor_cmd()[i].dq() = this->robot_data_.dq_target[i];
                 dds_low_command.motor_cmd()[i].kp() = this->robot_data_.joint_stiffness[i];
                 dds_low_command.motor_cmd()[i].kd() = this->robot_data_.joint_damping[i];
             }
+            dds_low_command.crc() = Crc32Core((uint32_t *)&dds_low_command, (sizeof(dds_low_command) >> 2) - 1);
+            this->lowcmd_publisher_->Write(dds_low_command);
         } else if (control_state_ == ControlState::DAMPING_MODE) {
             LowCmd_ dds_low_command;
             dds_low_command.mode_pr() = static_cast<uint8_t>(0);
@@ -302,6 +317,8 @@ private:
                 dds_low_command.motor_cmd()[i].kp() = 0.0f;
                 dds_low_command.motor_cmd()[i].kd() = 4.0f;
             }
+            dds_low_command.crc() = Crc32Core((uint32_t *)&dds_low_command, (sizeof(dds_low_command) >> 2) - 1);
+            this->lowcmd_publisher_->Write(dds_low_command);
         }
     }
 
@@ -319,9 +336,14 @@ public:
         msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
         msc_->SetTimeout(5.0f);
         msc_->Init();
+
+        loco_client_ = std::make_shared<g1::LocoClient>();
+        loco_client_->Init();
+        loco_client_->SetTimeout(5.0f);
+
         toDefaultControl();
 
-        // CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HarwareInterface::LowCommandWriter, this);
+        lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HarwareInterface::LowCommandWriter, this);
     }
     
     void toUserControl() {
@@ -339,6 +361,15 @@ public:
             this->robot_data_.joint_stiffness[i] = 0.0f;
             this->robot_data_.joint_damping[i] = 4.0f;
         }
+
+        // set the wrist joints to the default stiffness and damping
+        for (int i : wrist_joint_indices) {
+            this->robot_data_.q_target[i] = 0.0f;
+            this->robot_data_.dq_target[i] = 0.0f;
+            this->robot_data_.joint_stiffness[i] = default_wrist_stiffness;
+            this->robot_data_.joint_damping[i] = default_wrist_damping;
+        }
+
         std::cout << "Release Mode succeeded\n";
         this->control_state_ = ControlState::USER_CONTROL;
     }

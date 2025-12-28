@@ -53,7 +53,8 @@ PYBIND11_MODULE(g1_interface, m) {
         .def_readonly("rpy", &RobotData<float>::rpy)
         .def_readonly("omega", &RobotData<float>::omega)
         .def_readonly("body_positions", &RobotData<float>::body_positions)
-        .def_readonly("body_quaternions", &RobotData<float>::body_quaternions);
+        .def_readonly("body_quaternions", &RobotData<float>::body_quaternions)
+        .def_readonly("is_user_control", &RobotData<float>::is_user_control_);
 
     // Expose RobotData<double> as RobotData (Python's default is float64/double)
     py::class_<RobotData<double>>(m, "RobotData")
@@ -68,7 +69,8 @@ PYBIND11_MODULE(g1_interface, m) {
         .def_readonly("rpy", &RobotData<double>::rpy)
         .def_readonly("omega", &RobotData<double>::omega)
         .def_readonly("body_positions", &RobotData<double>::body_positions)
-        .def_readonly("body_quaternions", &RobotData<double>::body_quaternions);
+        .def_readonly("body_quaternions", &RobotData<double>::body_quaternions)
+        .def_readonly("is_user_control", &RobotData<double>::is_user_control_);
 
     // Helper function to convert numpy array or list to std::array<float, 29>
     // py::array_t<float> automatically accepts both numpy arrays and lists/tuples
