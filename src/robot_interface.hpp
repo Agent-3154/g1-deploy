@@ -178,8 +178,9 @@ public:
     }
     
     RobotData<T> getData() const {
-        robot_data_.is_user_control_ = (this->control_state_ == ControlState::USER_CONTROL);
-        return robot_data_;
+        RobotData<T> data = robot_data_;
+        data.is_user_control_ = (this->control_state_ == ControlState::USER_CONTROL);
+        return data;
     }
 
     void setJointStiffness(const std::array<T, 29> &joint_stiffness) {
