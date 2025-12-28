@@ -1,0 +1,42 @@
+observation:
+  policy:
+    command:
+    root_angvel_b:  {}
+    gravity_multistep: {steps: 4}
+    joint_pos_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
+    joint_vel_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
+    prev_actions: {steps: 2}
+    root_linvel_b:    {}
+    body_height:  {body_names: .*ankle_roll_link}
+
+action:
+  action_scaling: 
+    .*hip_pitch.*: 0.548
+    .*hip_roll.*: 0.351
+    .*hip_yaw.*: 0.548
+    .*knee.*: 0.351
+    waist_yaw_joint: 0.541
+    waist_roll_joint: 0.439
+    waist_pitch_joint: 0.439
+    .*ankle.*: 0.439
+    .*shoulder.*: 0.173
+    .*elbow_joint: 0.173
+
+default_joint_pos:
+  .*_hip_pitch.*: -0.1
+  .*_knee.*: 0.3
+  .*_ankle_pitch.*: -0.2
+  .*_elbow.*: 0.6
+  left_shoulder_roll_joint: 0.2
+  left_shoulder_pitch_joint: 0.2
+  right_shoulder_roll_joint: -0.2
+  right_shoulder_pitch_joint: 0.2
+  waist_yaw_joint: 0.0
+  waist_roll_joint: 0.0
+  waist_pitch_joint: 0.0
+
+stiffness:
+  {'.*_hip_yaw_joint': 80.35847694274636, '.*_hip_roll_joint': 99.09842777666113, '.*_hip_pitch_joint': 160.71695388549273, '.*_knee_joint': 99.09842777666113, '.*ankle.*': 28.50124619574858, 'waist.*': 28.50124619574858, '.*_shoulder_pitch_joint': 14.25062309787429, '.*_shoulder_roll_joint': 14.25062309787429, '.*_shoulder_yaw_joint': 14.25062309787429, '.*_elbow_joint': 14.25062309787429, '.*_wrist_roll_joint': 14.25062309787429, '.*_wrist_pitch_joint': 16.77832748089279, '.*_wrist_yaw_joint': 16.77832748089279}
+damping:
+  {'.*_hip_pitch_joint': 2.5578897650279457, '.*_hip_roll_joint': 6.3088018534966395, '.*_hip_yaw_joint': 2.5578897650279457, '.*_knee_joint': 6.3088018534966395, '.*ankle.*': 1.814445686584846, 'waist.*': 1.814445686584846, '.*_shoulder_pitch_joint': 0.907222843292423, '.*_shoulder_roll_joint': 0.907222843292423, '.*_shoulder_yaw_joint': 0.907222843292423, '.*_elbow_joint': 0.907222843292423, '.*_wrist_roll_joint': 0.907222843292423, '.*_wrist_pitch_joint': 1.06814150219, '.*_wrist_yaw_joint': 1.06814150219}
+

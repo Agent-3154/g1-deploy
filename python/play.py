@@ -10,42 +10,12 @@ import itertools
 import json
 import onnxruntime as ort
 import yaml
+import torch
 from pathlib import Path
 from collections import OrderedDict
 from observation import Observation, Articulation
-
-
-class ONNXModule:
-    def __init__(self, onnx_path: Path | str):
-        self.onnx_path = onnx_path
-        self.session = ort.InferenceSession(onnx_path)
-        self.input_names = [input.name for input in self.session.get_inputs()]
-        self.output_names = [output.name for output in self.session.get_outputs()]
-        self.input_shapes = [input.shape for input in self.session.get_inputs()]
-        self.output_shapes = [output.shape for output in self.session.get_outputs()]
-        self.input_types = [input.type for input in self.session.get_inputs()]
-        self.output_types = [output.type for output in self.session.get_outputs()]
-
-    def __repr__(self) -> str:
-        """Return a string representation of the ONNXModule."""
-        lines = [
-            f"ONNXModule(onnx_path={self.onnx_path!r}",
-            f"  inputs: {len(self.input_names)}",
-        ]
-        for name, shape, dtype in zip(self.input_names, self.input_shapes, self.input_types):
-            lines.append(f"    {name}: shape={shape}, dtype={dtype}")
-        lines.append(f"  outputs: {len(self.output_names)}")
-        for name, shape, dtype in zip(self.output_names, self.output_shapes, self.output_types):
-            lines.append(f"    {name}: shape={shape}, dtype={dtype}")
-        lines.append(")")
-        return "\n".join(lines)
-    
-    def dummy_input(self) -> dict[str, np.ndarray]:
-        return {input.name: np.zeros(input.shape, dtype=np.float32) for input in self.session.get_inputs()}
-    
-    def forward(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        # inputs = {name: value[None, ...] for name, value in inputs.items()}
-        return self.session.run(self.output_names, inputs)
+from timerfd import Timer
+from policy import ONNXModule
 
 
 # Add the build directory to Python path to import the compiled module
@@ -98,11 +68,15 @@ if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
-    onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
+    onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
+    config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
     onnx_module = ONNXModule(onnx_path)
     print(onnx_module)
+    # config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
 
-    config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
+    # torchscript_path = Path(__file__).parent.parent / "checkpoints" / "policy_29dof.pt"
+    # torchscript_module = TorchJitModule(torchscript_path)
+
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     
@@ -122,12 +96,15 @@ if __name__ == "__main__":
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
 
-    asset_meta_path = Path(__file__).parent.parent / "checkpoints" / "asset_meta.json"
-    with open(asset_meta_path, "r") as f:
-        asset_meta = json.load(f)
     mujoco_joint_names = [mjModel.joint(i).name for i in range(mjModel.njnt)]
     mujoco_joint_names.remove("floating_base_joint")
-    robot = Articulation(robot, asset_meta)
+    robot = Articulation(
+        robot,
+        config["action"]["action_scaling"],
+        config["default_joint_pos"],
+        config["stiffness"],
+        config["damping"],
+    )
 
     observation_config = config["observation"]
     observation_groups = {}
@@ -135,7 +112,10 @@ if __name__ == "__main__":
         observation_groups[group_name] = []
         for observation_name, observation_config in group_config.items():
             observation_class = Observation.registry[observation_name]
-            observation = observation_class(robot)
+            if observation_config is None:
+                observation = observation_class(robot)
+            else:
+                observation = observation_class(robot, **observation_config)
             observation_groups[group_name].append(observation)
     
     def compute_observations():
@@ -146,10 +126,6 @@ if __name__ == "__main__":
                 group_results.append(observation())
             results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
         return results
-    
-    inputs = onnx_module.dummy_input()
-    inputs.update(compute_observations())
-    outputs = onnx_module.forward(inputs)
 
     if hardware:
         meshes = extract_meshes(mjModel)
@@ -168,13 +144,20 @@ if __name__ == "__main__":
             )
     
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
+    timer = Timer(0.02)
     for i in itertools.count():
-        mjData.qpos[0:3] = robot.data.position
+        mjData.qpos[0:3] = robot.data.root_pos_w
         mjData.qpos[3:7] = robot.data.quaternion
         mjData.qpos[7:] = robot.data.q
         mjData.qvel[6:] = robot.data.dq
         mujoco.mj_forward(mjModel, mjData)
-        
+
+        inputs = onnx_module.dummy_input()
+        inputs.update(compute_observations())
+        action = onnx_module.forward(inputs)["action"]
+        robot.apply_action(action)
+
+        print(i)
         if i % 1000 == 0:
             robot.reset()
 
@@ -189,5 +172,5 @@ if __name__ == "__main__":
         #         rr.Transform3D(translation=xpos[i], quaternion=xquat[i])
         #     )
         viewer.sync()
-        time.sleep(0.01)
+        timer.sleep()
 
