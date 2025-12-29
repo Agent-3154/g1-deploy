@@ -137,6 +137,36 @@ protected:
     mjModel *model_;
     mjData *data_;
     ControlState control_state_ = ControlState::BUILTIN_CONTROL;
+
+    void computeFK() {
+        if (this->model_ && this->data_) {
+            // Copy robot_data_ into data_ to compute FK
+            // Root quaternion: qpos[3:7] = [w, x, y, z]
+            std::copy(this->robot_data_.quaternion.begin(),
+                        this->robot_data_.quaternion.end(),
+                        this->data_->qpos + 3);
+            
+            // Joint positions: qpos[7:7+29] = robot_data_.q[0:29]
+            for (int i = 0; i < this->njoints_; i++) {
+                this->data_->qpos[7 + i] = static_cast<mjtNum>(this->robot_data_.q[i]);
+            }
+            
+            mj_forward(this->model_, this->data_);
+
+            // Update body positions from data_->xpos [nbody, 3] using Eigen::Map for efficient copy
+            // excluding the world body
+            if (this->nbodies_ > 0) {
+                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
+                    this->data_->xpos, this->model_->nbody, 3);
+                this->robot_data_.body_positions = xpos_map.bottomRows(this->nbodies_).cast<T>();
+                
+                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 4, Eigen::RowMajor>> xquat_map(
+                    this->data_->xquat, this->model_->nbody, 4);
+                this->robot_data_.body_quaternions = xquat_map.bottomRows(this->nbodies_).cast<T>();
+            }
+        }
+    }
+
 public:
     int njoints_;
     int nbodies_;
@@ -168,7 +198,7 @@ public:
         std::cout << "Model has " << this->model_->nbody << " bodies" << std::endl;
         
         this->njoints_ = this->model_->nq - 7;
-        this->nbodies_ = this->model_->nbody;
+        this->nbodies_ = this->model_->nbody - 1; // exclude the world body
 
         // Initialize body_positions Eigen matrix to match number of bodies [nbody, 3]
         this->robot_data_.body_positions.resize(this->nbodies_, 3);
@@ -259,34 +289,6 @@ private:
         
         if (lowstate_counter_ % 10 == 0) {
             this->computeFK();
-        }
-    }
-
-    void computeFK() {
-        if (this->model_ && this->data_) {
-            // Copy robot_data_ into data_ to compute FK
-            // Root quaternion: qpos[3:7] = [w, x, y, z]
-            std::copy(this->robot_data_.quaternion.begin(),
-                        this->robot_data_.quaternion.end(),
-                        this->data_->qpos + 3);
-            
-            // Joint positions: qpos[7:7+29] = robot_data_.q[0:29]
-            for (int i = 0; i < this->njoints_; i++) {
-                this->data_->qpos[7 + i] = static_cast<mjtNum>(this->robot_data_.q[i]);
-            }
-            
-            mj_forward(this->model_, this->data_);
-
-            // Update body positions from data_->xpos [nbody, 3] using Eigen::Map for efficient copy
-            if (this->nbodies_ > 0) {
-                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
-                    this->data_->xpos, this->nbodies_, 3);
-                this->robot_data_.body_positions = xpos_map.cast<float>();
-                
-                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 4, Eigen::RowMajor>> xquat_map(
-                    this->data_->xquat, this->nbodies_, 4);
-                this->robot_data_.body_quaternions = xquat_map.cast<float>();
-            }
         }
     }
 
@@ -535,12 +537,7 @@ private:
             this->robot_data_.projected_gravity[1] = gravity_body.y();
             this->robot_data_.projected_gravity[2] = gravity_body.z();
             
-            // Body positions: xpos [nbody, 3] - efficient copy using Eigen::Map
-            if (this->model_->nbody > 0) {
-                Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
-                    this->data_->xpos, this->model_->nbody, 3);
-                this->robot_data_.body_positions = xpos_map.cast<double>();
-            }
+            this->computeFK();
         }
     }
     

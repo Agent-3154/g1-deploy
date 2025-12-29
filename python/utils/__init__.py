@@ -12,6 +12,7 @@ from .math import (
     body_names_isaac as BODY_NAMES_ISAAC,
     body_names_mujoco as BODY_NAMES_MUJOCO
 )
+from .visualization import extract_meshes
 
 __all__ = [
     "resolve_matching_names",
@@ -26,5 +27,6 @@ __all__ = [
     "JOINT_NAMES_ISAAC",
     "JOINT_NAMES_MUJOCO",
     "BODY_NAMES_ISAAC",
-    "BODY_NAMES_MUJOCO"
+    "BODY_NAMES_MUJOCO",
+    "extract_meshes"
 ]

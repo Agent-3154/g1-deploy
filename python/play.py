@@ -4,18 +4,14 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import argparse
-import trimesh
 import rerun as rr
 import itertools
-import json
-import onnxruntime as ort
 import yaml
-import torch
 from pathlib import Path
-from collections import OrderedDict
 from observation import Observation, Articulation
 from timerfd import Timer
 from policy import ONNXModule
+from utils import extract_meshes
 
 
 # Add the build directory to Python path to import the compiled module
@@ -28,39 +24,8 @@ import g1_interface
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hardware", action="store_true", help="Use hardware interface")
+    parser.add_argument("--rerun", action="store_true", help="Use rerun")
     return parser.parse_args()
-
-
-def extract_meshes(model: mujoco.MjModel) -> OrderedDict[str, trimesh.Trimesh]:
-    meshes = OrderedDict()
-    for i in range(model.nbody):
-        body = model.body(i)
-        geomadr = body.geomadr[0]
-        geomnum = body.geomnum[0]
-        body_meshes = []
-        for geomid in range(geomadr, geomadr + geomnum):
-            geom = model.geom(geomid)
-            if geom.type == mujoco.mjtGeom.mjGEOM_MESH and geom.contype[0] == 0:
-                mesh = model.mesh(geom.dataid[0])
-                faceadr = mesh.faceadr.item()
-                facenum = mesh.facenum.item()
-                vertadr = mesh.vertadr.item()
-                vertnum = mesh.vertnum.item()
-                mesh = trimesh.Trimesh(
-                    vertices=model.mesh_vert[vertadr:vertadr + vertnum],
-                    faces=model.mesh_face[faceadr:faceadr + facenum]
-                )
-                transform = trimesh.transformations.concatenate_matrices(
-                    trimesh.transformations.translation_matrix(geom.pos),
-                    trimesh.transformations.quaternion_matrix(geom.quat)
-                )
-                mesh.apply_transform(transform)
-                body_meshes.append(mesh)
-        if len(body_meshes) > 0:
-            body_mesh = trimesh.util.concatenate(body_meshes)
-            body_mesh.merge_vertices()
-            meshes[body.name] = body_mesh
-    return meshes
 
 
 # Example usage
@@ -70,12 +35,12 @@ if __name__ == "__main__":
     args = parse_args()
     onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
     config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
+    
+    # onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
+    # config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
+    
     onnx_module = ONNXModule(onnx_path)
     print(onnx_module)
-    # config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
-
-    # torchscript_path = Path(__file__).parent.parent / "checkpoints" / "policy_29dof.pt"
-    # torchscript_module = TorchJitModule(torchscript_path)
 
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -127,7 +92,7 @@ if __name__ == "__main__":
             results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
         return results
 
-    if hardware:
+    if args.rerun:
         meshes = extract_meshes(mjModel)
         print(len(meshes))
         rr.init("g1", recording_id="g1")
@@ -146,30 +111,34 @@ if __name__ == "__main__":
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     timer = Timer(0.02)
     for i in itertools.count():
-        mjData.qpos[0:3] = robot.data.root_pos_w
-        mjData.qpos[3:7] = robot.data.quaternion
-        mjData.qpos[7:] = robot.data.q
-        mjData.qvel[6:] = robot.data.dq
+        data = robot.data
+        mjData.qpos[0:3] = data.root_pos_w
+        mjData.qpos[3:7] = data.quaternion
+        mjData.qpos[7:] = data.q
+        mjData.qvel[6:] = data.dq
         mujoco.mj_forward(mjModel, mjData)
 
         inputs = onnx_module.dummy_input()
         inputs.update(compute_observations())
         action = onnx_module.forward(inputs)["action"]
+        # action = onnx_module.forward(inputs)["linear_4"]
         robot.apply_action(action)
 
         if i % 500 == 0:
             robot.reset()
+        
+        if args.rerun:
+            rr.set_time("step", timestamp=i)
+            # xpos = mjData.xpos[1:]
+            # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]
 
-        # rr.set_time("step", timestamp=step)
-        # # xpos = mjData.xpos[1:]
-        # # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]
-        # xpos = np.asarray(data.body_positions)[1:]
-        # xquat = np.asarray(data.body_quaternions)[1:, [1, 2, 3, 0]]
-        # for i, (body_name, mesh) in enumerate(meshes.items()):
-        #     rr.log(
-        #         f"robot/{body_name}",
-        #         rr.Transform3D(translation=xpos[i], quaternion=xquat[i])
-        #     )
+            xpos = np.asarray(data.body_positions)
+            xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]
+            for ii, (body_name, mesh) in enumerate(meshes.items()):
+                rr.log(
+                    f"robot/{body_name}",
+                    rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
+                )
         viewer.sync()
         timer.sleep()
 
