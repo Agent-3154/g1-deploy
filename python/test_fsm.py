@@ -14,8 +14,9 @@ import torch
 from pathlib import Path
 from collections import OrderedDict
 from observation import Observation, Articulation
-from policy import FSM, SkillA, SkillB
+from policy import FSM, SkillA, SkillB, TrackMode
 from timerfd import Timer
+from utils import extract_meshes
 
 
 # Add the build directory to Python path to import the compiled module
@@ -29,39 +30,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hardware", action="store_true", help="Use hardware interface")
     return parser.parse_args()
-
-
-def extract_meshes(model: mujoco.MjModel) -> OrderedDict[str, trimesh.Trimesh]:
-    meshes = OrderedDict()
-    for i in range(model.nbody):
-        body = model.body(i)
-        geomadr = body.geomadr[0]
-        geomnum = body.geomnum[0]
-        body_meshes = []
-        for geomid in range(geomadr, geomadr + geomnum):
-            geom = model.geom(geomid)
-            if geom.type == mujoco.mjtGeom.mjGEOM_MESH and geom.contype[0] == 0:
-                mesh = model.mesh(geom.dataid[0])
-                faceadr = mesh.faceadr.item()
-                facenum = mesh.facenum.item()
-                vertadr = mesh.vertadr.item()
-                vertnum = mesh.vertnum.item()
-                mesh = trimesh.Trimesh(
-                    vertices=model.mesh_vert[vertadr:vertadr + vertnum],
-                    faces=model.mesh_face[faceadr:faceadr + facenum]
-                )
-                transform = trimesh.transformations.concatenate_matrices(
-                    trimesh.transformations.translation_matrix(geom.pos),
-                    trimesh.transformations.quaternion_matrix(geom.quat)
-                )
-                mesh.apply_transform(transform)
-                body_meshes.append(mesh)
-        if len(body_meshes) > 0:
-            body_mesh = trimesh.util.concatenate(body_meshes)
-            body_mesh.merge_vertices()
-            meshes[body.name] = body_mesh
-    return meshes
-
 
 # Example usage
 if __name__ == "__main__":
@@ -88,11 +56,27 @@ if __name__ == "__main__":
 
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
+    meshes = extract_meshes(mjModel)
+    print(len(meshes))
+    
+    rr.init("g1", recording_id="g1")
+    rr.connect_grpc("rerun+http://192.168.3.23:9876/proxy")
+    rr.set_time("step", timestamp=0.0)
+    for body_name, mesh in meshes.items():
+        rr.log(
+            f"robot/{body_name}",
+            rr.Mesh3D(
+                vertex_positions=mesh.vertices,
+                triangle_indices=mesh.faces,
+                vertex_normals=mesh.vertex_normals,
+            ),
+        )
 
     asset_meta_path = Path(__file__).parent.parent / "checkpoints" / "asset_meta.json"
     with open(asset_meta_path, "r") as f:
         asset_meta = json.load(f)
-    config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
+    # config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
+    config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -108,35 +92,15 @@ if __name__ == "__main__":
 
     fsm = FSM(
         policies = {
-            "sA": SkillA(
-                "sA", 
-                robot, 
-                Path(__file__).parent.parent / "cfg" / "loco.yaml", 
-                Path(__file__).parent.parent / "checkpoints" / "policy-12-28_17-02.onnx"
-            ),
-            "sB": SkillB(
-                "sB", 
-                robot, 
-                Path(__file__).parent.parent / "cfg" / "loco.yaml", 
-                Path(__file__).parent.parent / "checkpoints" / "policy-12-28_17-02.onnx"
+            "track": TrackMode(
+                "track",
+                robot,
+                Path(__file__).parent.parent / "cfg" / "config.yaml",
+                Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
             )
         },
-        start_policy_name = "sA"
+        start_policy_name = "track"
     )
-    
-    def key_callback(keycode):
-        try:
-            key = chr(keycode).upper()
-            if key == 'A':
-                print("Key A pressed: switching to SkillA")
-                fsm.set_next_policy("sA")
-            elif key == 'B':
-                print("Key B pressed: switching to SkillB")
-                fsm.set_next_policy("sB")
-        except:
-            pass
-
-    viewer = mujoco.viewer.launch_passive(mjModel, mjData, key_callback=key_callback)
 
     '''to be replaced with mujoco viewer key callback'''
     import sys
@@ -144,40 +108,69 @@ if __name__ == "__main__":
     import termios
     import tty
 
-    # def get_key():
-    #     fd = sys.stdin.fileno()
-    #     old_settings = termios.tcgetattr(fd)
-    #     try:
-    #         tty.setraw(fd)
-    #         [i, _, _] = select.select([sys.stdin], [], [], 0.01)
-    #         if i:
-    #             key = sys.stdin.read(1)
-    #         else:
-    #             key = None
-    #     finally:
-    #         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    #     return key
+    def get_key():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            [i, _, _] = select.select([sys.stdin], [], [], 0.01)
+            if i:
+                key = sys.stdin.read(1)
+            else:
+                key = None
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return key
 
     timer = Timer(0.02)
+    # viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     for i in itertools.count():
-        mjData.qpos[0:3] = robot.data.root_pos_w
-        mjData.qpos[3:7] = robot.data.quaternion
-        mjData.qpos[7:] = robot.data.q
-        mjData.qvel[6:] = robot.data.dq
+        data = robot.data
+        mjData.qpos[0:3] = data.root_pos_w
+        mjData.qpos[3:7] = data.quaternion
+        mjData.qpos[7:] = data.q
+        mjData.qvel[6:] = data.dq
         mujoco.mj_forward(mjModel, mjData)
 
-        # key = get_key()
-        # if key == 'a':
-        #     fsm.set_next_policy("sA")
-        # elif key == 'b':
-        #     fsm.set_next_policy("sB")
+        key = get_key()
+        if key == 'a':
+            fsm.set_next_policy("sA")
+        elif key == 'b':
+            fsm.set_next_policy("sB")
+        elif key == 't':
+            fsm.set_next_policy("track")
 
         action = fsm.run()
         robot.apply_action(action)
+        
+        body_names = [
+            "left_hip_pitch_link", "right_hip_pitch_link", 
+            "left_knee_link", "right_knee_link", 
+            "left_ankle_roll_link", "right_ankle_roll_link", 
+            "left_shoulder_roll_link", "right_shoulder_roll_link", 
+            "left_elbow_link", "right_elbow_link", 
+            "left_wrist_yaw_link", "right_wrist_yaw_link"
+        ]
+
+        body_indices = robot.find_bodies(body_names)[0]
+
+        rr.set_time("step", timestamp=i)
+        xpos = np.asarray(data.body_positions)
+        xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]
+        for ii, (body_name, mesh) in enumerate(meshes.items()):
+            if ii in body_indices:
+                rr.log(
+                    f"robot/{body_name}_position",
+                    rr.Points3D(positions=xpos[ii], colors=[255, 0, 0], radii=0.01)
+                )
+            rr.log(
+                f"robot/{body_name}",
+                rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
+            )
 
         if i % 500 == 0:
             robot.reset()
 
-        viewer.sync()
+        # viewer.sync()
         timer.sleep()
 

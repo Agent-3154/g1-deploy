@@ -25,6 +25,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hardware", action="store_true", help="Use hardware interface")
     parser.add_argument("--rerun", action="store_true", help="Use rerun")
+    parser.add_argument("--sync", action="store_true", help="Use sync mode")
     return parser.parse_args()
 
 
@@ -33,11 +34,13 @@ if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
-    onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
-    config_path = Path(__file__).parent.parent / "cfg" / "loco.yaml"
+    # onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
+    # onnx_path = "/home/btx0424/lab51/deploy/g1-deploy/checkpoints/policy-12-30_14-47.onnx"
+    # config_path = Path(__file__).parent.parent / "cfg" / "loco_body.yaml"
     
     # onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
-    # config_path = Path(__file__).parent.parent / "cfg" / "config.yaml"
+    onnx_path = Path(__file__).parent.parent / "checkpoints" / "policy-12-30_15-28.onnx"
+    config_path = Path(__file__).parent.parent / "cfg" / "test.yaml"
     
     onnx_module = ONNXModule(onnx_path)
     print(onnx_module)
@@ -54,7 +57,7 @@ if __name__ == "__main__":
     else:
         scene_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
         robot = g1_interface.G1MujocoInterface(str(scene_path))
-        robot.run_async()
+        robot.run(sync=args.sync)
         mjModel = mujoco.MjModel.from_xml_path(str(scene_path))
         print(f"timestep: {robot.get_timestep()}")
 
@@ -123,6 +126,11 @@ if __name__ == "__main__":
         action = onnx_module.forward(inputs)["action"]
         # action = onnx_module.forward(inputs)["linear_4"]
         robot.apply_action(action)
+
+        if args.sync:
+            decimation = int(0.02 / robot.robot.get_timestep())
+            for _ in range(decimation):
+                robot.robot.step()
 
         if i % 500 == 0:
             robot.reset()

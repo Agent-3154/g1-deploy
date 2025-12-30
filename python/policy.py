@@ -57,6 +57,7 @@ class Policy:
         output_key: str = "action"
     ):
         self.name = name
+        self.robot = robot
 
         with open(config_path, "r") as f:
             self.obs_config = yaml.load(f, Loader=yaml.FullLoader)["observation"]
@@ -155,22 +156,21 @@ class SkillB(Policy):
     def checkchange(self):
         return None
 
-# class TrackMode(Policy):
-#     def __init__(self, name='track', model=""):
-#         super().__init__(name, model)
+class TrackMode(Policy):
+    def __init__(self, name, robot, config_path, model_path, output_key="linear_4"):
+        super().__init__(name, robot, config_path, model_path, output_key)
 
-#     def enter(self):
-#         self.t = 0
-#         self.motion_length = 100
+    def enter(self):
+        print("Entering TrackMode")
+    
+    def run(self) -> np.ndarray:
+        return super().run()
 
-#     def run(self, observations: dict[str, np.ndarray]) -> np.ndarray:
-#         self.t += 1
-#         return super().run(observations)
-
-#     def checkchange(self):
-#         if self.t >= self.motion_length:
-#             return 'loco'
-#         return None
+    def checkchange(self) -> str | None:
+        if self.robot.t >= self.robot.ref_motion.motion_length:
+            # return "loco"
+            return "sA"
+        return None
 
 class FSM:
     def __init__(self, policies: dict[str, Policy], start_policy_name: str):

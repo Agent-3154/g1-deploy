@@ -137,7 +137,7 @@ PYBIND11_MODULE(g1_interface, m) {
         .def("set_joint_damping", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_damping) {
             self.setJointDamping(convert_to_double_array(joint_damping));
         }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)")
-        .def("run_async", &G1MujocoInterface::run_async, "Start asynchronous physics simulation")
+        .def("run", &G1MujocoInterface::run, py::arg("sync") = false, "Start physics simulation")
         .def("stop", &G1MujocoInterface::stop, "Stop asynchronous physics simulation")
         .def("is_running", &G1MujocoInterface::is_running, "Check if physics simulation is running")
         .def("set_timestep", &G1MujocoInterface::set_timestep, py::arg("timestep"), "Set physics timestep")
@@ -145,6 +145,7 @@ PYBIND11_MODULE(g1_interface, m) {
         .def("reset", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_pos) {
             self.reset(convert_to_double_array(joint_pos));
         }, py::arg("joint_pos"), "Reset the simulation")
+        .def("step", &G1MujocoInterface::step, "Step the simulation")
         .def("write_joint_position_target", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_position_target) {
             self.writeJointPositionTarget(convert_to_double_array(joint_position_target));
         }, py::arg("joint_position_target"), "Write the joint position target (accepts list, tuple, or numpy array)")

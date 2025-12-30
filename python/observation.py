@@ -30,27 +30,27 @@ class RefMotion:
 
         self.motion_length = self.joint_pos.shape[0]
 
-    # def enter(self, root_pos_w, root_quat_w):
-    #     robot_yaw_q = yaw_quat(root_quat_w)
-    #     ref_yaw_q = yaw_quat(self.root_quat_w[0])
-    #     delta_yaw_q = quat_mul(robot_yaw_q, quat_inv(ref_yaw_q))
+    def enter(self, root_pos_w, root_quat_w):
+        robot_yaw_q = yaw_quat(root_quat_w)
+        ref_yaw_q = yaw_quat(self.root_quat_w[0])
+        delta_yaw_q = quat_mul(robot_yaw_q, quat_inv(ref_yaw_q))
 
-    #     ref_start_pos = self.body_pos_w[0, 0].copy()
+        ref_start_pos = self.body_pos_w[0, 0].copy()
         
-    #     rel_pos = self.body_pos_w - ref_start_pos
-    #     self.body_pos_w = root_pos_w + quat_apply(delta_yaw_q, rel_pos)
+        rel_pos = self.body_pos_w - ref_start_pos
+        self.body_pos_w = root_pos_w + quat_apply(delta_yaw_q, rel_pos)
         
-    #     T, N, _ = self.body_quat_w.shape
-    #     self.body_quat_w = quat_mul(
-    #         np.tile(delta_yaw_q, (T, N, 1)), 
-    #         self.body_quat_w
-    #     )
+        T, N, _ = self.body_quat_w.shape
+        self.body_quat_w = quat_mul(
+            np.tile(delta_yaw_q, (T, N, 1)), 
+            self.body_quat_w
+        )
         
-    #     self.body_lin_vel_w = quat_apply(delta_yaw_q, self.body_lin_vel_w)
-    #     self.body_ang_vel_w = quat_apply(delta_yaw_q, self.body_ang_vel_w)
+        self.body_lin_vel_w = quat_apply(delta_yaw_q, self.body_lin_vel_w)
+        self.body_ang_vel_w = quat_apply(delta_yaw_q, self.body_ang_vel_w)
 
-    #     self.root_pos_w = self.body_pos_w[:, 0]    # (T, 3)
-    #     self.root_quat_w = self.body_quat_w[:, 0]    # (T, 4)
+        self.root_pos_w = self.body_pos_w[:, 0]    # (T, 3)
+        self.root_quat_w = self.body_quat_w[:, 0]    # (T, 4)
 
 class Articulation:
     def __init__(
@@ -100,10 +100,12 @@ class Articulation:
         self.action_scaling = np.array(self.action_scaling, dtype=np.float32)
         self.action_dim = len(self.action_joint_ids)
         self.action_buf = np.zeros((4, self.action_dim), dtype=np.float32)
+        self.applied_action = np.zeros(self.action_dim, dtype=np.float32)
 
         self.joint_position_target = np.zeros(29)
 
         self.ref_motion = RefMotion(motion_file = "sfu_29dof.pkl")
+        self.ref_motion.enter(self.root_pos_w, self.root_quat_w)
         self.t = 0
     
     def find_joints(self, joint_names: str):
@@ -116,11 +118,14 @@ class Articulation:
     def data(self):
         return self.robot.get_data()
 
-    def apply_action(self, action: np.ndarray):
+    def apply_action(self, action: np.ndarray, alpha: float = 0.8):
+        action = action.reshape(self.action_dim)
         self.action_buf[1:] = self.action_buf[:-1]
-        self.action_buf[0] = action.reshape(self.action_dim)
+        self.action_buf[0] = action
+        
+        self.applied_action = self.applied_action * (1 - alpha) + action * alpha
         joint_position_target = self.default_joint_pos.copy()
-        joint_position_target[self.action_joint_ids] += self.action_buf[0] * self.action_scaling
+        joint_position_target[self.action_joint_ids] += self.applied_action * self.action_scaling
         
         self.robot.write_joint_position_target(joint_position_target[self.joint_indexing.isaac2mujoco])
         self.t += 1
@@ -132,7 +137,7 @@ class Articulation:
 
     @property
     def root_pos_w(self):
-        return np.asarray(self.data.position)
+        return np.asarray(self.data.root_pos_w)
 
     @property
     def root_quat_w(self):

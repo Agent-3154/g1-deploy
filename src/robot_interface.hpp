@@ -466,25 +466,24 @@ private:
     std::atomic<bool> should_stop_;
     std::mutex step_mutex_;
     double timestep_;  // Physics timestep in ssereconds
-    
-    void step() {
+    bool async_; // whether to run physics simulation in a separate thread
+
+    void physicsStep() {
         std::lock_guard<std::mutex> lock(step_mutex_);
         if (this->model_ && this->data_) {
             // compute torques using PD control
             // tau = joint_stiffness * (q_target - q) + joint_damping * (0 - dq)
-            if (this->njoints_ > 0 && this->model_->nu >= this->njoints_) {
-                for (int i = 0; i < this->njoints_; i++) {
-                    // Get current joint position and velocity from MuJoCo state
-                    double q_curr = this->data_->qpos[7 + i];
-                    double dq_curr = this->data_->qvel[6 + i];
-                    
-                    // Compute PD control torque
-                    double tau = this->robot_data_.joint_stiffness[i] * (this->robot_data_.q_target[i] - q_curr)
-                               + this->robot_data_.joint_damping[i] * (this->robot_data_.dq_target[i] - dq_curr);
-                    
-                    // Set control input for actuator
-                    this->data_->ctrl[i] = tau;
-                }
+            for (int i = 0; i < this->njoints_; i++) {
+                // Get current joint position and velocity from MuJoCo state
+                double q_curr = this->data_->qpos[7 + i];
+                double dq_curr = this->data_->qvel[6 + i];
+                
+                // Compute PD control torque
+                double tau = this->robot_data_.joint_stiffness[i] * (this->robot_data_.q_target[i] - q_curr)
+                            + this->robot_data_.joint_damping[i] * (this->robot_data_.dq_target[i] - dq_curr);
+                
+                // Set control input for actuator
+                this->data_->ctrl[i] = tau;
             }
 
             mj_step(this->model_, this->data_);
@@ -537,27 +536,34 @@ private:
             this->robot_data_.projected_gravity[1] = gravity_body.y();
             this->robot_data_.projected_gravity[2] = gravity_body.z();
             
-            this->computeFK();
+            mj_forward(this->model_, this->data_);
+
+            // Update body positions from data_->xpos [nbody, 3] using Eigen::Map for efficient copy
+            // excluding the world body
+            
+            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> xpos_map(
+                this->data_->xpos, this->model_->nbody, 3);
+            this->robot_data_.body_positions = xpos_map.bottomRows(this->nbodies_).cast<double>();
+            
+            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, 4, Eigen::RowMajor>> xquat_map(
+                this->data_->xquat, this->model_->nbody, 4);
+            this->robot_data_.body_quaternions = xquat_map.bottomRows(this->nbodies_).cast<double>();
         }
     }
     
-    void physics_loop() {
-        auto last_time = std::chrono::steady_clock::now();
-        
+    void physicsLoop() {        
         while (!should_stop_.load()) {
-            auto current_time = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration<double>(current_time - last_time).count();
+            auto iter_start_time = std::chrono::steady_clock::now();
             
-            // Step physics at the specified timestep rate
-            if (elapsed >= timestep_) {
-                step();
-                updateState();
-                last_time = current_time;
-            } else {
+            physicsStep();
+            updateState();
+
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration<double>(current_time - iter_start_time).count();
+            auto sleep_time = std::chrono::duration<double>(timestep_ - elapsed);
+            if (sleep_time.count() > 0.0) {
                 // Sleep to avoid busy-waiting
-                std::this_thread::sleep_for(std::chrono::microseconds(
-                    static_cast<int>((timestep_ - elapsed) * 1000000)
-                ));
+                std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int>(sleep_time.count() * 1000000.0)));
             }
         }
         
@@ -566,12 +572,17 @@ private:
 
 public:
     G1MujocoInterface(std::string mjcf_path, double timestep = -1.0) 
-        : running_(false), should_stop_(false), timestep_(timestep) {
+        : running_(false),
+        should_stop_(false),
+        timestep_(timestep),
+        async_(false)
+    {
         this->loadMJCF(mjcf_path);
         // Use model's timestep if not specified
         if (timestep_ < 0 && this->model_) {
             timestep_ = this->model_->opt.timestep;
         }
+        updateState();
     }
     
     ~G1MujocoInterface() {
@@ -584,26 +595,38 @@ public:
         }
     }
     
-    void run_async() {
-        if (!running_.load()) {
-            should_stop_.store(false);
-            running_.store(true);
-            physics_thread_ = std::thread(&G1MujocoInterface::physics_loop, this);
+    void run(bool sync = false) {
+        // zero initialize the targets in robot_data_
+        for (int i = 0; i < this->njoints_; i++) {
+            this->robot_data_.q_target[i] = 0.0;
+            this->robot_data_.dq_target[i] = 0.0;
+        }
+        if (sync) {
+            this->async_ = false;
         } else {
-            // throw error
-            throw std::runtime_error("Physics thread already running");
+            this->async_ = true;
+            if (!running_.load()) {
+                should_stop_.store(false);
+                running_.store(true);
+                physics_thread_ = std::thread(&G1MujocoInterface::physicsLoop, this);
+            } else {
+                // throw error
+                throw std::runtime_error("Physics thread already running");
+            }
         }
     }
     
     void stop() {
-        if (running_.load()) {
-            should_stop_.store(true);
-            if (physics_thread_.joinable()) {
-                physics_thread_.join();
+        if (this->async_) {
+            if (running_.load()) {
+                should_stop_.store(true);
+                if (physics_thread_.joinable()) {
+                    physics_thread_.join();
+                }
+            } else {
+                // throw error
+                throw std::runtime_error("Physics thread not running");
             }
-        } else {
-            // throw error
-            throw std::runtime_error("Physics thread not running");
         }
     }
     
@@ -626,6 +649,15 @@ public:
             std::copy(joint_pos.begin(), joint_pos.end(), this->data_->qpos + 7);
             std::copy(joint_pos.begin(), joint_pos.end(), this->robot_data_.q_target.begin());
         }
+    }
+
+    void step() {
+        // throw an error if not in sync mode
+        if (this->async_) {
+            throw std::runtime_error("Not in sync mode");
+        }
+        physicsStep();
+        updateState();
     }
 
 };
