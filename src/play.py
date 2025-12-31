@@ -9,19 +9,11 @@ import itertools
 import yaml
 from pathlib import Path
 
-from g1_deploy import g1_interface
+import g1_deploy
 from g1_deploy.observation import Observation, Articulation
-from g1_deploy.timerfd import Timer
 from g1_deploy.policy import ONNXModule
-from g1_deploy.utils import extract_meshes
+from g1_deploy.utils import extract_meshes, Timer
 
-
-# # Add the build directory to Python path to import the compiled module
-# build_dir = Path(__file__).parent.parent / "build"
-# sys.path.insert(0, str(build_dir))
-
-# # Import the g1_interface module
-# import g1_interface
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -30,19 +22,24 @@ def parse_args():
     parser.add_argument("--sync", action="store_true", help="Use sync mode")
     return parser.parse_args()
 
+CKPT_DIR = Path(__file__).parent.parent / "checkpoints"
+CKPT_DIR.mkdir(exist_ok=True)
+CFG_DIR = Path(__file__).parent.parent / "cfg"
 
 # Example usage
 if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
-    # onnx_path = "/home/btx0424/lab51/active-adaptation/scripts/exports/G1Flat29/policy-12-28_17-02.onnx"
-    # onnx_path = "/home/btx0424/lab51/deploy/g1-deploy/checkpoints/policy-12-30_14-47.onnx"
-    # config_path = Path(__file__).parent.parent / "cfg" / "loco_body.yaml"
     
-    # onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
-    onnx_path = Path(__file__).parent.parent / "checkpoints" / "policy-12-30_15-28.onnx"
-    config_path = Path(__file__).parent.parent / "cfg" / "test.yaml"
+    onnx_path = CKPT_DIR / "policy-12-28_17-02.onnx"
+    config_path = CFG_DIR / "loco.yaml"
+
+    # onnx_path = CKPT_DIR / "policy-12-30_14-47.onnx"
+    # config_path = CFG_DIR / "cfg" / "loco_body.yaml"
+    
+    # onnx_path = CKPT_DIR / "policy-12-30_15-28.onnx"
+    # config_path = CFG_DIR / "cfg" / "test.yaml"
     
     onnx_module = ONNXModule(onnx_path)
     print(onnx_module)
@@ -53,12 +50,12 @@ if __name__ == "__main__":
     hardware = args.hardware
     mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
     if hardware:
-        robot = g1_interface.G1HarwareInterface("enp58s0")
+        robot = g1_deploy.G1HardwareInterface("enp58s0")
         robot.load_mjcf(str(mjcf_path)) # for computing FK
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
         scene_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
-        robot = g1_interface.G1MujocoInterface(str(scene_path))
+        robot = g1_deploy.G1MujocoInterface(str(scene_path))
         robot.run(sync=args.sync)
         mjModel = mujoco.MjModel.from_xml_path(str(scene_path))
         print(f"timestep: {robot.get_timestep()}")

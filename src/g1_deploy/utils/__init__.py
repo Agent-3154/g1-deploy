@@ -13,6 +13,7 @@ from .math import (
     body_names_mujoco as BODY_NAMES_MUJOCO
 )
 from .visualization import extract_meshes
+from .timerfd import Timer
 
 __all__ = [
     "resolve_matching_names",
@@ -28,5 +29,6 @@ __all__ = [
     "JOINT_NAMES_MUJOCO",
     "BODY_NAMES_ISAAC",
     "BODY_NAMES_MUJOCO",
-    "extract_meshes"
+    "extract_meshes",
+    "Timer"
 ]

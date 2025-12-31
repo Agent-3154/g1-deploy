@@ -1,9 +1,28 @@
 import numpy as np
 import joblib
-from utils import *
-from typing import List
+
+from g1_deploy import G1HardwareInterface, G1MujocoInterface
+from g1_deploy.utils import (
+    quat_apply,
+    quat_conjugate,
+    quat_inv,
+    quat_mul,
+    quat_rotate_inverse,
+    yaw_quat,
+    resolve_matching_names,
+    resolve_matching_names_values,
+    subtract_frame_transforms,
+    JOINT_NAMES_ISAAC,
+    JOINT_NAMES_MUJOCO,
+    BODY_NAMES_ISAAC,
+    BODY_NAMES_MUJOCO
+)
+from typing import List, Union
 from pathlib import Path
 from typing import NamedTuple
+
+
+RobotInterface = Union[G1HardwareInterface, G1MujocoInterface]
 
 class Indexing(NamedTuple):
     mujoco2isaac: List[int]
@@ -55,7 +74,7 @@ class RefMotion:
 class Articulation:
     def __init__(
         self,
-        robot,
+        robot: RobotInterface,
         action_scaling: dict | np.ndarray,
         default_joint_pos: dict | np.ndarray,
         stiffness: dict | np.ndarray,

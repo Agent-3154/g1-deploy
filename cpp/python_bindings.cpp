@@ -129,7 +129,7 @@ PYBIND11_MODULE(_cpp, m) {
              py::arg("mjcf_path"), 
              py::arg("timestep") = -1.0,
              "Initialize MuJoCo interface")
-        .def_readonly("async", &G1MujocoInterface::async_)
+        .def_readonly("async_", &G1MujocoInterface::async_)
         .def("load_mjcf", &G1MujocoInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
         .def("get_data", &G1MujocoInterface::getData, "Get the current robot data")
         .def("set_joint_stiffness", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_stiffness) {
