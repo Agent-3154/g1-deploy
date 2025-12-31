@@ -77,7 +77,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Add executable
 add_executable(g1-deploy
-  src/main.cpp
+  cpp/main.cpp
 )
 
 # Include directories
@@ -102,9 +102,10 @@ endif()
 target_link_libraries(g1-deploy PRIVATE rerun_sdk)
 
 # Python module
-pybind11_add_module(g1_interface src/python_bindings.cpp src/robot_interface.hpp)
+# Note: Module name is _cpp to match the import in g1_deploy/__init__.py
+pybind11_add_module(_cpp cpp/python_bindings.cpp cpp/robot_interface.hpp)
 
-target_include_directories(g1_interface PRIVATE
+target_include_directories(_cpp PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -112,7 +113,7 @@ target_include_directories(g1_interface PRIVATE
 # Link Eigen3 (provided by MuJoCo)
 # Eigen3::Eigen should automatically provide include directories when linked
 if(TARGET Eigen3::Eigen)
-    target_link_libraries(g1_interface PRIVATE Eigen3::Eigen)
+    target_link_libraries(_cpp PRIVATE Eigen3::Eigen)
     # Verify include directories are set (they should be via INTERFACE_INCLUDE_DIRECTORIES)
     get_target_property(EIGEN3_INCLUDES Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
     if(EIGEN3_INCLUDES)
@@ -120,7 +121,7 @@ if(TARGET Eigen3::Eigen)
     else()
         # If not set, try to get from EIGEN3_INCLUDE_DIR variable
         if(DEFINED EIGEN3_INCLUDE_DIR)
-            target_include_directories(g1_interface PRIVATE ${EIGEN3_INCLUDE_DIR})
+            target_include_directories(_cpp PRIVATE ${EIGEN3_INCLUDE_DIR})
             message(STATUS "Manually added Eigen3 include directory: ${EIGEN3_INCLUDE_DIR}")
         endif()
     endif()
@@ -128,20 +129,22 @@ else()
     # Fallback: try to find Eigen3 and add include directories manually
     find_package(Eigen3 QUIET)
     if(Eigen3_FOUND)
-        target_include_directories(g1_interface PRIVATE ${EIGEN3_INCLUDE_DIR})
+        target_include_directories(_cpp PRIVATE ${EIGEN3_INCLUDE_DIR})
         message(STATUS "Using Eigen3 from find_package: ${EIGEN3_INCLUDE_DIR}")
     else()
         message(FATAL_ERROR "Eigen3::Eigen target not found. Eigen3 should be provided by MuJoCo. Try: rm -rf build && mkdir build && cd build && cmake ..")
     endif()
 endif()
 
-target_link_libraries(g1_interface PRIVATE
+target_link_libraries(_cpp PRIVATE
     unitree_sdk2
     mujoco::mujoco
     Threads::Threads
     dl
 )
 
-# Compile definitions (if needed)
-# target_compile_definitions(g1-deploy PRIVATE ...)
+install(TARGETS _cpp
+    LIBRARY DESTINATION "g1_deploy/_cpp"
+    RUNTIME DESTINATION "g1_deploy/_cpp"
+)
 

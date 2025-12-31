@@ -3,7 +3,7 @@ import onnxruntime as ort
 import numpy as np
 import yaml
 from pathlib import Path
-from observation import Observation, Articulation
+from g1_deploy.observation import Observation, Articulation
 
 class ONNXModule:
     def __init__(self, onnx_path: Path | str):

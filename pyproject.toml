@@ -1,0 +1,19 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=3.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "g1-deploy"
+version = "0.1.0"
+description = "Hybrid Python+C++ package built with scikit-build-core and pybind11"
+readme = "readme.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "XU, Botian" }]
+
+
+[tool.scikit-build]
+build-dir = "build"
+build.verbose = true
+editable.mode = "inplace"
+

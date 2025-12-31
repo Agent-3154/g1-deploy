@@ -8,18 +8,20 @@ import rerun as rr
 import itertools
 import yaml
 from pathlib import Path
-from observation import Observation, Articulation
-from timerfd import Timer
-from policy import ONNXModule
-from utils import extract_meshes
+
+from g1_deploy import g1_interface
+from g1_deploy.observation import Observation, Articulation
+from g1_deploy.timerfd import Timer
+from g1_deploy.policy import ONNXModule
+from g1_deploy.utils import extract_meshes
 
 
-# Add the build directory to Python path to import the compiled module
-build_dir = Path(__file__).parent.parent / "build"
-sys.path.insert(0, str(build_dir))
+# # Add the build directory to Python path to import the compiled module
+# build_dir = Path(__file__).parent.parent / "build"
+# sys.path.insert(0, str(build_dir))
 
-# Import the g1_interface module
-import g1_interface
+# # Import the g1_interface module
+# import g1_interface
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -112,7 +114,8 @@ if __name__ == "__main__":
             )
     
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
-    timer = Timer(0.02)
+    control_dt = 0.02
+    timer = Timer(control_dt)
     for i in itertools.count():
         data = robot.data
         mjData.qpos[0:3] = data.root_pos_w
@@ -128,7 +131,7 @@ if __name__ == "__main__":
         robot.apply_action(action)
 
         if args.sync:
-            decimation = int(0.02 / robot.robot.get_timestep())
+            decimation = int(control_dt / robot.robot.get_timestep())
             for _ in range(decimation):
                 robot.robot.step()
 

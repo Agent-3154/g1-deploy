@@ -7,7 +7,7 @@
 namespace py = pybind11;
 using namespace unitree::common;
 
-PYBIND11_MODULE(g1_interface, m) {
+PYBIND11_MODULE(_cpp, m) {
     m.doc() = "Python bindings for G1Interface";
 
     // Expose GamepadState::ButtonState
