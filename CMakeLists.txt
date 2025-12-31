@@ -29,42 +29,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
 find_package(Threads REQUIRED)
-
+find_package(Eigen3 REQUIRED)
 # Try to find unitree_sdk2 as a CMake package first (if installed via make install)
 find_package(unitree_sdk2 REQUIRED)
 
+# Find Mujoco from pip installation
+# 1) Discover Python & ensure we can run a small snippet
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+# 2) Ask Python where the installed 'mujoco' package lives
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -c
+          "import mujoco, os; print(os.path.dirname(mujoco.__file__))"
+  OUTPUT_VARIABLE MUJOCO_PY_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -c
+          "import mujoco, os; print(mujoco.__version__)"
+  OUTPUT_VARIABLE MUJOCO_VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+# 3) Derive lib & include (if present) paths from the package
+set(MUJOCO_LIB    "${MUJOCO_PY_DIR}/libmujoco.so.${MUJOCO_VERSION}")
+set(MUJOCO_INCLUDE_DIR "${MUJOCO_PY_DIR}/include")   # may exist depending on wheel
+
+message(STATUS "MuJoCo (pip) package dir: ${MUJOCO_PY_DIR}")
+message(STATUS "MuJoCo lib:           ${MUJOCO_LIB}")
+message(STATUS "MuJoCo include dir:       ${MUJOCO_INCLUDE_DIR}")
+
 # Include FetchContent for downloading dependencies
 include(FetchContent)
-
-set(MUJOCO_LOCAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mujoco-3.4.0")
-
-if(EXISTS "${MUJOCO_LOCAL_PATH}/CMakeLists.txt")
-    message(STATUS "Found MuJoCo in local thirdparty directory: ${MUJOCO_LOCAL_PATH}")
-    
-    # Set MuJoCo build options before adding subdirectory
-    set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "Build MuJoCo examples")
-    set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "Build MuJoCo tests")
-    set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "Build MuJoCo simulate application")
-    
-    # Add MuJoCo as a subdirectory (MuJoCo will handle Eigen3 dependency)
-    # Note: If you get an error about Eigen3::Eigen already existing, try:
-    # rm -rf build && mkdir build && cd build && cmake ..
-    add_subdirectory(${MUJOCO_LOCAL_PATH} ${CMAKE_BINARY_DIR}/_deps/mujoco-build)
-    
-else()
-    message(FATAL_ERROR "Could not find MuJoCo in local thirdparty directory: ${MUJOCO_LOCAL_PATH}")
-endif()
-
-# Eigen3 will be provided by MuJoCo's dependencies
-# Check if Eigen3::Eigen exists after MuJoCo is configured
-if(NOT TARGET Eigen3::Eigen)
-    # If MuJoCo didn't provide Eigen3, try to find it
-    find_package(Eigen3 QUIET)
-    if(NOT Eigen3_FOUND)
-        message(WARNING "Eigen3 not found. MuJoCo should provide it via FetchContent.")
-    endif()
-endif()
-
 # Fetch Rerun SDK
 FetchContent_Declare(
     rerun_sdk
@@ -84,20 +78,17 @@ add_executable(g1-deploy
 target_include_directories(g1-deploy PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${MUJOCO_INCLUDE_DIR}
 )
 
 # Link libraries
 target_link_libraries(g1-deploy PRIVATE
     unitree_sdk2
-    mujoco::mujoco
+    ${MUJOCO_LIB}
     Threads::Threads
+    Eigen3::Eigen
     dl
 )
-
-# Link Eigen3 to executable as well (if available)
-if(TARGET Eigen3::Eigen)
-    target_link_libraries(g1-deploy PRIVATE Eigen3::Eigen)
-endif()
 
 target_link_libraries(g1-deploy PRIVATE rerun_sdk)
 
@@ -108,43 +99,19 @@ pybind11_add_module(_cpp cpp/python_bindings.cpp cpp/robot_interface.hpp)
 target_include_directories(_cpp PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${MUJOCO_INCLUDE_DIR}
 )
-
-# Link Eigen3 (provided by MuJoCo)
-# Eigen3::Eigen should automatically provide include directories when linked
-if(TARGET Eigen3::Eigen)
-    target_link_libraries(_cpp PRIVATE Eigen3::Eigen)
-    # Verify include directories are set (they should be via INTERFACE_INCLUDE_DIRECTORIES)
-    get_target_property(EIGEN3_INCLUDES Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
-    if(EIGEN3_INCLUDES)
-        message(STATUS "Eigen3::Eigen include directories: ${EIGEN3_INCLUDES}")
-    else()
-        # If not set, try to get from EIGEN3_INCLUDE_DIR variable
-        if(DEFINED EIGEN3_INCLUDE_DIR)
-            target_include_directories(_cpp PRIVATE ${EIGEN3_INCLUDE_DIR})
-            message(STATUS "Manually added Eigen3 include directory: ${EIGEN3_INCLUDE_DIR}")
-        endif()
-    endif()
-else()
-    # Fallback: try to find Eigen3 and add include directories manually
-    find_package(Eigen3 QUIET)
-    if(Eigen3_FOUND)
-        target_include_directories(_cpp PRIVATE ${EIGEN3_INCLUDE_DIR})
-        message(STATUS "Using Eigen3 from find_package: ${EIGEN3_INCLUDE_DIR}")
-    else()
-        message(FATAL_ERROR "Eigen3::Eigen target not found. Eigen3 should be provided by MuJoCo. Try: rm -rf build && mkdir build && cd build && cmake ..")
-    endif()
-endif()
 
 target_link_libraries(_cpp PRIVATE
     unitree_sdk2
-    mujoco::mujoco
+    ${MUJOCO_LIB}
     Threads::Threads
+    Eigen3::Eigen
     dl
 )
 
 install(TARGETS _cpp
-    LIBRARY DESTINATION "g1_deploy/_cpp"
-    RUNTIME DESTINATION "g1_deploy/_cpp"
+    LIBRARY DESTINATION "${SKBUILD_PROJECT_NAME}"
+    RUNTIME DESTINATION "${SKBUILD_PROJECT_NAME}"
 )
 

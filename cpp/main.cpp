@@ -13,7 +13,7 @@ int main(int argc, char const *argv[]) {
     
     std::cout << "Initializing G1Interface..." << std::endl;
     std::string networkInterface = "enp58s0";
-    auto g1Interface = G1HarwareInterface(networkInterface);
+    auto g1Interface = G1HardwareInterface(networkInterface);
     std::cout << "G1HarwareInterface initialized successfully" << std::endl;
     
     const rerun::RecordingStream rec = rerun::RecordingStream("rerun_example_cpp");

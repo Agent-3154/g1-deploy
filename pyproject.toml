@@ -15,5 +15,4 @@ authors = [{ name = "XU, Botian" }]
 [tool.scikit-build]
 build-dir = "build"
 build.verbose = true
-editable.mode = "inplace"
 

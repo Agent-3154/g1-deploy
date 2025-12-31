@@ -104,24 +104,24 @@ PYBIND11_MODULE(_cpp, m) {
         return result;
     };
 
-    // Expose G1HarwareInterface (uses float)
-    py::class_<G1HarwareInterface>(m, "G1HarwareInterface")
+    // Expose G1HardwareInterface (uses float)
+    py::class_<G1HardwareInterface>(m, "G1HardwareInterface")
         .def(py::init<std::string>(), py::arg("networkInterface"))
-        .def("load_mjcf", &G1HarwareInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
-        .def("get_data", &G1HarwareInterface::getData, "Get the current robot data")
-        .def("set_joint_stiffness", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_stiffness) {
+        .def("load_mjcf", &G1HardwareInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
+        .def("get_data", &G1HardwareInterface::getData, "Get the current robot data")
+        .def("set_joint_stiffness", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_stiffness) {
             self.setJointStiffness(convert_to_float_array(joint_stiffness));
         }, py::arg("joint_stiffness"), "Set the joint stiffness (accepts list, tuple, or numpy array)")
-        .def("set_joint_damping", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_damping) {
+        .def("set_joint_damping", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_damping) {
             self.setJointDamping(convert_to_float_array(joint_damping));
         }, py::arg("joint_damping"), "Set the joint damping (accepts list, tuple, or numpy array)")
-        .def("write_joint_position_target", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_position_target) {
+        .def("write_joint_position_target", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_position_target) {
             self.writeJointPositionTarget(convert_to_float_array(joint_position_target));
         }, py::arg("joint_position_target"), "Write the joint position target (accepts list, tuple, or numpy array)")
-        .def("write_joint_velocity_target", [&convert_to_float_array](G1HarwareInterface& self, py::array_t<float> joint_velocity_target) {
+        .def("write_joint_velocity_target", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_velocity_target) {
             self.writeJointVelocityTarget(convert_to_float_array(joint_velocity_target));
         }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)")
-        .def("get_gamepad", &G1HarwareInterface::getGamepadState, "Get the current gamepad state");
+        .def("get_gamepad", &G1HardwareInterface::getGamepadState, "Get the current gamepad state");
 
     // Expose G1MujocoInterface (uses double)
     py::class_<G1MujocoInterface>(m, "G1MujocoInterface")

@@ -232,7 +232,7 @@ public:
 
 
 // Hardware interface uses float (matching hardware data types)
-class G1HarwareInterface: public G1Interface<float> {
+class G1HardwareInterface: public G1Interface<float> {
 private:
     
     ThreadPtr lowcmd_thread_; // thread for writing lowcmd
@@ -326,11 +326,11 @@ private:
     }
 
 public:
-    G1HarwareInterface(std::string networkInterface) {
+    G1HardwareInterface(std::string networkInterface) {
         ChannelFactory::Instance()->Init(0, networkInterface);
 
         lowstate_subscriber_.reset(new ChannelSubscriber<LowState_>("rt/lowstate"));
-        lowstate_subscriber_->InitChannel(std::bind(&G1HarwareInterface::LowStateCallback, this, std::placeholders::_1), 1);
+        lowstate_subscriber_->InitChannel(std::bind(&G1HardwareInterface::LowStateCallback, this, std::placeholders::_1), 1);
 
         lowcmd_publisher_.reset(new ChannelPublisher<LowCmd_>("rt/lowcmd"));
         lowcmd_publisher_->InitChannel();
@@ -346,7 +346,7 @@ public:
 
         toDefaultControl();
 
-        lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HarwareInterface::LowCommandWriter, this);
+        lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HardwareInterface::LowCommandWriter, this);
     }
     
     void toUserControl() {
