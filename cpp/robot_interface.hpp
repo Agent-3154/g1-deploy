@@ -466,7 +466,6 @@ private:
     std::atomic<bool> should_stop_;
     std::mutex step_mutex_;
     double timestep_;  // Physics timestep in ssereconds
-    bool async_; // whether to run physics simulation in a separate thread
 
     void physicsStep() {
         std::lock_guard<std::mutex> lock(step_mutex_);
@@ -571,6 +570,8 @@ private:
     }
 
 public:
+    bool async_; // whether to run physics simulation in a separate thread
+
     G1MujocoInterface(std::string mjcf_path, double timestep = -1.0) 
         : running_(false),
         should_stop_(false),
