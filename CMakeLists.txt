@@ -1,4 +1,24 @@
 cmake_minimum_required(VERSION 3.16...3.27)
+
+# Prioritize using gcc and g++ from conda environment if available
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CONDA_BIN_DIR "$ENV{CONDA_PREFIX}/bin")
+    
+    # Check for gcc in conda environment
+    find_program(CONDA_GCC NAMES gcc PATHS ${CONDA_BIN_DIR} NO_DEFAULT_PATH)
+    if(CONDA_GCC)
+        set(CMAKE_C_COMPILER "${CONDA_GCC}")
+        message(STATUS "Using conda gcc: ${CONDA_GCC}")
+    endif()
+    
+    # Check for g++ in conda environment
+    find_program(CONDA_GXX NAMES g++ PATHS ${CONDA_BIN_DIR} NO_DEFAULT_PATH)
+    if(CONDA_GXX)
+        set(CMAKE_CXX_COMPILER "${CONDA_GXX}")
+        message(STATUS "Using conda g++: ${CONDA_GXX}")
+    endif()
+endif()
+
 project(g1-deploy
   VERSION 1.0.0
   LANGUAGES CXX)

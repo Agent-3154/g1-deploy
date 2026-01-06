@@ -118,7 +118,7 @@ if __name__ == "__main__":
                 ),
             )
     
-    # viewer = mujoco.viewer.launch_passive(mjModel, mjData)
+    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
     timer = Timer(control_dt)
     for i in itertools.count():
@@ -166,6 +166,6 @@ if __name__ == "__main__":
                     fill_mode="solid"
                 )
             )
-        # viewer.sync()
+        viewer.sync()
         timer.sleep()
 

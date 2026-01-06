@@ -86,15 +86,11 @@ class root_quat_w(Observation):
 
 class root_linvel_b(Observation):
     def compute(self):
-        root_quat_w = self.articulation.root_quat_w
-        root_lin_vel_w = self.articulation.root_lin_vel_w
-        return quat_rotate_inverse(root_quat_w, root_lin_vel_w)
+        return self.articulation.root_lin_vel_b
 
 class root_angvel_b(Observation):
     def compute(self):
-        root_quat_w = self.articulation.root_quat_w
-        root_ang_vel_w = self.articulation.root_ang_vel_w
-        return quat_rotate_inverse(root_quat_w, root_ang_vel_w)
+        return self.articulation.root_ang_vel_b
 
 class projected_gravity_b(Observation):
     def compute(self):
@@ -157,12 +153,6 @@ class prev_actions(Observation):
     
     def compute(self):
         return self.articulation.action_buf[:self.steps].reshape(-1)
-
-
-class root_linvel_b(Observation):
-    def compute(self):
-        return quat_rotate_inverse(self.articulation.root_quat_w, self.articulation.root_lin_vel_w)
-
 
 class body_height(Observation):
     def __init__(self, articulation: Articulation, body_names: str, command: Optional[Any] = None):

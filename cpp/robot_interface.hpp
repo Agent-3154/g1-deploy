@@ -101,6 +101,7 @@ struct GamepadState {
 template<typename T>
 struct RobotData {
     std::array<T, 3> root_pos_w;
+    std::array<T, 3> root_lin_vel_b;
     std::array<T, 3> root_lin_vel_w;
     std::array<T, 3> root_ang_vel_b;
 
@@ -330,9 +331,9 @@ private:
         this->robot_data_.root_pos_w[1] = state.position()[1];
         this->robot_data_.root_pos_w[2] = state.position()[2];
 
-        this->robot_data_.root_lin_vel_w[0] = state.velocity()[0];
-        this->robot_data_.root_lin_vel_w[1] = state.velocity()[1];
-        this->robot_data_.root_lin_vel_w[2] = state.velocity()[2];
+        this->robot_data_.root_lin_vel_b[0] = state.velocity()[0];
+        this->robot_data_.root_lin_vel_b[1] = state.velocity()[1];
+        this->robot_data_.root_lin_vel_b[2] = state.velocity()[2];
     }
 
     void LowCommandWriter() {
@@ -593,8 +594,8 @@ private:
             // angular velocity: qvel[3:6] (3 elements: x, y, z)
             std::copy(this->data_->qvel + 3,
                 this->data_->qvel + 6,
-                this->robot_data_.root_ang_vel_w.begin());
-            
+                this->robot_data_.root_ang_vel_b.begin());
+            Eigen::Vector3d root_lin_vel_w = Eigen::Vector3d(this->data_->qvel[0], this->data_->qvel[1], this->data_->qvel[2]);
             // Compute projected gravity: rotate gravity vector [0, 0, -1] from world to body frame
             Eigen::Quaterniond quat(this->robot_data_.quaternion[0], 
                                     this->robot_data_.quaternion[1], 
@@ -605,6 +606,11 @@ private:
             this->robot_data_.projected_gravity[0] = gravity_body.x();
             this->robot_data_.projected_gravity[1] = gravity_body.y();
             this->robot_data_.projected_gravity[2] = gravity_body.z();
+
+            auto root_lin_vel_b = quat.inverse() * root_lin_vel_w;
+            this->robot_data_.root_lin_vel_b[0] = root_lin_vel_b.x();
+            this->robot_data_.root_lin_vel_b[1] = root_lin_vel_b.y();
+            this->robot_data_.root_lin_vel_b[2] = root_lin_vel_b.z();
             
             mj_forward(this->model_, this->data_);
 

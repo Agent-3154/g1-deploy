@@ -118,8 +118,16 @@ class Articulation:
         return np.asarray(self.data.root_lin_vel_w)
 
     @property
+    def root_lin_vel_b(self):
+        return np.asarray(self.data.root_lin_vel_b)
+
+    @property
     def root_ang_vel_w(self):
         return np.asarray(self.data.root_ang_vel_w)
+
+    @property
+    def root_ang_vel_b(self):
+        return np.asarray(self.data.root_ang_vel_b)
 
     @property
     def joint_pos(self):
