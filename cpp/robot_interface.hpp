@@ -351,7 +351,7 @@ public:
         lowcmd_publisher_->InitChannel();
 
         estimate_state_subscriber_.reset(new ChannelSubscriber<SportModeState_>("rt/odommodestate"));
-        estimate_state_subscriber_->InitChannel(std::bind(&G1HarwareInterface::OdomMessageHandler, this, std::placeholders::_1), 1);
+        estimate_state_subscriber_->InitChannel(std::bind(&G1HardwareInterface::OdomMessageHandler, this, std::placeholders::_1), 1);
 
         // ensure the robot is in default control
         msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();

@@ -87,12 +87,13 @@ class Articulation:
     def data(self):
         return self.robot.get_data()
 
-    def apply_action(self, action: np.ndarray, alpha: float = 0.8):
+    def process_action(self, action: np.ndarray):
         action = action.reshape(self.action_dim)
         self.action_buf[1:] = self.action_buf[:-1]
         self.action_buf[0] = action
         
-        self.applied_action = self.applied_action * (1 - alpha) + action * alpha
+    def apply_action(self, alpha: float = 0.8):
+        self.applied_action = self.applied_action * (1 - alpha) + self.action_buf[0] * alpha
         joint_position_target = self.default_joint_pos.copy()
         joint_position_target[self.action_joint_ids] += self.applied_action * self.action_scaling
         

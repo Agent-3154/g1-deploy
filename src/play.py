@@ -132,9 +132,8 @@ if __name__ == "__main__":
         inputs = onnx_module.dummy_input()
         inputs.update(compute_observations())
         action = onnx_module.forward(inputs)["action"]
-        robot.apply_action(action)
-
         robot.process_action(action)
+
         if args.sync:
             decimation = int(control_dt / robot.robot.get_timestep())
             for _ in range(decimation):
