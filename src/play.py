@@ -76,16 +76,20 @@ if __name__ == "__main__":
         config["damping"],
     )
 
+    if config.get("command", None) is not None:
+        from g1_deploy.ref_motion import RefMotion
+        command = RefMotion(**config["command"])
+
     observation_config = config["observation"]
     observation_groups = {}
     for group_name, group_config in observation_config.items():
         observation_groups[group_name] = []
         for observation_name, observation_config in group_config.items():
             observation_class = Observation.registry[observation_name]
-            if observation_config is None:
-                observation = observation_class(robot)
-            else:
-                observation = observation_class(robot, **observation_config)
+            kwargs = {"command": command}
+            if observation_config is not None:
+                kwargs.update(observation_config)
+            observation = observation_class(robot, **observation_config)
             observation_groups[group_name].append(observation)
     
     def compute_observations():

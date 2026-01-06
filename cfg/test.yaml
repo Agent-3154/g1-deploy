@@ -1,3 +1,5 @@
+command:
+  motion_path: null
 observation:
   policy:
     root_quat_w:          {}
