@@ -188,57 +188,75 @@ class ref_root_quat_w(Observation):
 class ref_kp_pos_b(Observation):
     def __init__(self, articulation: Articulation, body_names: List[str], command: Optional[Any] = None):
         super().__init__(articulation)
-        self.ref_motion = self.articulation.ref_motion
+        self.body_indices = self.articulation.find_bodies(body_names)[0]
+    
+    def compute(self):
+        root_quat_w = self.articulation.root_quat_w
+        body_quat_w = self.articulation.body_quat_w[self.body_indices]
+        root_quat_conj = quat_conjugate(root_quat_w)
+        # Expand root_quat_conj to match body_quat_w shape: (4,) -> (n_bodies, 4)
+        root_quat_conj = np.tile(root_quat_conj, (body_quat_w.shape[0], 1))
+        body_ori_b = quat_mul(root_quat_conj, body_quat_w)
+        return body_ori_b.flatten()
+
+class ref_root_quat(Observation):
+    def compute(self):
+        t = min(self.articulation.t, self.articulation.ref_motion.motion_length - 1)
+        # Use get_aligned_body_state to get aligned reference body states
+        _, aligned_body_quat_w = self.articulation.get_aligned_body_state(t)
+        # Root body is at index 0 (pelvis)
+        ref_root_quat_w = aligned_body_quat_w[0]
+        root_quat_w = self.articulation.root_quat_w
+        quat_error = quat_mul(quat_inv(root_quat_w), ref_root_quat_w)
+        return quat_error.reshape(-1)
+
+class ref_anchor_pos(Observation):
+    def __init__(self, articulation: Articulation, anchor_body_name: str):
+        super().__init__(articulation)
+        self.anchor_body_index = articulation.find_bodies(anchor_body_name)[0][0]
+
+    def compute(self):
+        t = min(self.articulation.t, self.articulation.ref_motion.motion_length - 1)
+        ref_anchor_pos = self.articulation.ref_motion.body_pos_w[t, self.anchor_body_index]
+        ref_anchor_quat = self.articulation.ref_motion.body_quat_w[t, self.anchor_body_index]
+        anchor_pos = self.articulation.body_pos_w[self.anchor_body_index]
+        anchor_quat = self.articulation.body_quat_w[self.anchor_body_index]
+        pos, _ = subtract_frame_transforms(anchor_pos, anchor_quat, ref_anchor_pos, ref_anchor_quat)
+        return pos.reshape(-1)
+
+class ref_anchor_quat(Observation):
+    def __init__(self, articulation: Articulation, anchor_body_name: str):
+        super().__init__(articulation)
+        self.anchor_body_index = articulation.find_bodies(anchor_body_name)[0][0]
+
+    def compute(self):
+        t = min(self.articulation.t, self.articulation.ref_motion.motion_length - 1)
+        ref_anchor_pos = self.articulation.ref_motion.body_pos_w[t, self.anchor_body_index]
+        ref_anchor_quat = self.articulation.ref_motion.body_quat_w[t, self.anchor_body_index]
+        anchor_pos = self.articulation.body_pos_w[self.anchor_body_index]
+        anchor_quat = self.articulation.body_quat_w[self.anchor_body_index]
+        _, quat = subtract_frame_transforms(anchor_pos, anchor_quat, ref_anchor_pos, ref_anchor_quat)
+        return quat.reshape(-1)
+
+class ref_kp_pos_gap(Observation):
+    def __init__(self, articulation: Articulation, body_names: List[str]):
+        super().__init__(articulation)
         self.body_indices = self.articulation.find_bodies(body_names)[0]
 
     def compute(self):
-        t = min(self.articulation.t, self.ref_motion.motion_length)
-        ref_body_pos_w = self.ref_motion.body_pos_w[t][self.body_indices]
-        ref_body_quat_w = self.ref_motion.body_quat_w[t][self.body_indices]
+        t = min(self.articulation.t, self.articulation.ref_motion.motion_length - 1)
+        # Use get_aligned_body_state to get aligned reference body states
+        aligned_body_pos_w, aligned_body_quat_w = self.articulation.get_aligned_body_state(t)
+        ref_kp_pos = aligned_body_pos_w[self.body_indices]
+        ref_kp_quat = aligned_body_quat_w[self.body_indices]
 
-        body_pos_w = self.articulation.body_pos_w[self.body_indices]
-        body_quat_w = self.articulation.body_quat_w[self.body_indices]
+        body_kp_pos = self.articulation.body_pos_w[self.body_indices]
+        body_kp_quat = self.articulation.body_quat_w[self.body_indices]
 
-        pos, _ = subtract_frame_transforms(body_pos_w, body_quat_w, ref_body_pos_w, ref_body_quat_w)
+        pos, _ = subtract_frame_transforms(body_kp_pos, body_kp_quat, ref_kp_pos, ref_kp_quat)
         return pos.flatten()
 
 
 class command(Observation):
     def compute(self):
         return np.array([0.5, 0., 0., 0.3])
-
-
-############## LocoMode Obs ##############
-
-class loco_ang_vel(Observation):
-    def compute(self):
-        return self.articulation.root_ang_vel_w
-
-class loco_gravity_orientation(Observation):
-    def compute(self):
-        def get_gravity_orientation(quaternion):
-            qw, qx, qy, qz = quaternion
-            gravity_orientation = np.zeros(3)
-            gravity_orientation[0] = 2 * (-qz * qx + qw * qy)
-            gravity_orientation[1] = -2 * (qz * qy + qw * qx)
-            gravity_orientation[2] = 1 - 2 * (qw * qw + qz * qz)
-            return gravity_orientation
-        root_quat_w = self.articulation.root_quat_w
-        return get_gravity_orientation(root_quat_w)
-
-class loco_cmd(Observation):
-    def compute(self):
-        return np.array([0., 0., 0.])
-
-class loco_joint_pos(Observation):
-    def compute(self):
-        return self.articulation.joint_pos - self.articulation.default_joint_pos
-    
-class loco_joint_vel(Observation):
-    def compute(self):
-        return self.articulation.joint_vel
-
-class loco_prev_actions(Observation):
-    def compute(self):
-        return self.articulation.action_buf[0].reshape(-1)
-
