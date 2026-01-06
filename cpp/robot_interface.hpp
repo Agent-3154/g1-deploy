@@ -25,7 +25,8 @@ using namespace unitree_hg::msg::dds_;
 using namespace unitree_go::msg::dds_;
 
 const std::array<int, 6> wrist_joint_indices = {23, 24, 25, 26, 27, 28};
-const float default_wrist_stiffness = 16.0f;
+const std::array<int, 29> elbow_joint_indices = {18, 25};
+const float default_wrist_stiffness = 12.0f;
 const float default_wrist_damping = 2.0f;
 
 inline uint32_t Crc32Core(uint32_t *ptr, uint32_t len) {
@@ -101,7 +102,7 @@ template<typename T>
 struct RobotData {
     std::array<T, 3> root_pos_w;
     std::array<T, 3> root_lin_vel_w;
-    std::array<T, 3> root_ang_vel_w;
+    std::array<T, 3> root_ang_vel_b;
 
     std::array<T, 29> q;
     std::array<T, 29> q_target;
@@ -114,7 +115,6 @@ struct RobotData {
 
     std::array<T, 4> quaternion;
     std::array<T, 3> rpy;
-    std::array<T, 3> omega;
 
     // Body positions: [n_bodies, 3] - Eigen matrix for efficient contiguous storage and operations
     Eigen::Matrix<T, Eigen::Dynamic, 3> body_positions;
@@ -122,6 +122,25 @@ struct RobotData {
     // std::array<T, 6> body_velocities; // linear velocity and angular velocity
     bool is_user_control_;
 };
+
+// Helper to nicely print fixed-size std::array values
+template<typename T, std::size_t N>
+void print_array(const std::string& name, const std::array<T, N>& arr) {
+    std::cout << name << ": [";
+    for (std::size_t i = 0; i < N; ++i) {
+        std::cout << arr[i];
+        if (i + 1 < N) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << "]" << std::endl;
+}
+
+
+template<typename T>
+T lerp(T a, T b, T t) {
+    return a + (b - a) * t;
+}
 
 
 enum class ControlState {
@@ -258,6 +277,11 @@ private:
     uint8_t mode_machine_ = 0;
     std::mutex mode_switch_mutex_;  // Mutex for thread-safe mode switching
     std::mutex gamepad_mutex_;  // Mutex for thread-safe gamepad access 
+    
+    std::array<float, 29> joint_stiffness_;
+    std::array<float, 29> joint_damping_;
+    std::array<float, 29> joint_position_target_;
+    std::array<float, 29> joint_velocity_target_;
 
     void LowStateCallback(const void *message) {
         LowState_ low_state = *(const LowState_ *)message;
@@ -281,7 +305,7 @@ private:
         this->robot_data_.projected_gravity[2] = gravity_body.z();
         
         this->robot_data_.rpy = low_state.imu_state().rpy();
-        this->robot_data_.omega = low_state.imu_state().gyroscope();
+        this->robot_data_.root_ang_vel_b = low_state.imu_state().gyroscope();
         this->mode_machine_ = low_state.mode_machine();
         lowstate_counter_ = (lowstate_counter_ + 1) % 100;
 
@@ -305,6 +329,10 @@ private:
         this->robot_data_.root_pos_w[0] = state.position()[0];
         this->robot_data_.root_pos_w[1] = state.position()[1];
         this->robot_data_.root_pos_w[2] = state.position()[2];
+
+        this->robot_data_.root_lin_vel_w[0] = state.velocity()[0];
+        this->robot_data_.root_lin_vel_w[1] = state.velocity()[1];
+        this->robot_data_.root_lin_vel_w[2] = state.velocity()[2];
     }
 
     void LowCommandWriter() {
@@ -314,13 +342,23 @@ private:
             dds_low_command.mode_machine() = mode_machine_;
             
             for (int i = 0; i < this->njoints_; i++) {
+                this->joint_position_target_[i] = this->robot_data_.q_target[i];
+                this->joint_velocity_target_[i] = 0.0f;
+                this->joint_stiffness_[i] = this->robot_data_.joint_stiffness[i];
+                this->joint_damping_[i] = this->robot_data_.joint_damping[i];
+
                 dds_low_command.motor_cmd()[i].mode() = 1; // 1:Enable, 0:Disable
                 dds_low_command.motor_cmd()[i].tau() = 0.0f;
-                dds_low_command.motor_cmd()[i].q() = this->robot_data_.q_target[i];
-                dds_low_command.motor_cmd()[i].dq() = this->robot_data_.dq_target[i];
-                dds_low_command.motor_cmd()[i].kp() = this->robot_data_.joint_stiffness[i];
-                dds_low_command.motor_cmd()[i].kd() = this->robot_data_.joint_damping[i];
+                dds_low_command.motor_cmd()[i].q() = this->joint_position_target_[i];
+                dds_low_command.motor_cmd()[i].dq() = this->joint_velocity_target_[i];
+                dds_low_command.motor_cmd()[i].kp() = this->joint_stiffness_[i];
+                dds_low_command.motor_cmd()[i].kd() = this->joint_damping_[i];
+                // dds_low_command.motor_cmd()[i].q() = 0.0f;
+                // dds_low_command.motor_cmd()[i].dq() = 0.0f;
+                // dds_low_command.motor_cmd()[i].kp() = 0.0f;
+                // dds_low_command.motor_cmd()[i].kd() = 1.0f;
             }
+
             dds_low_command.crc() = Crc32Core((uint32_t *)&dds_low_command, (sizeof(dds_low_command) >> 2) - 1);
             this->lowcmd_publisher_->Write(dds_low_command);
         } else if (control_state_ == ControlState::DAMPING_MODE) {
@@ -353,6 +391,13 @@ public:
         estimate_state_subscriber_.reset(new ChannelSubscriber<SportModeState_>("rt/odommodestate"));
         estimate_state_subscriber_->InitChannel(std::bind(&G1HardwareInterface::OdomMessageHandler, this, std::placeholders::_1), 1);
 
+        for (int i = 0; i < this->njoints_; i++) {
+            this->joint_position_target_[i] = 0.0f;
+            this->joint_velocity_target_[i] = 0.0f;
+            this->joint_stiffness_[i] = 0.0f;
+            this->joint_damping_[i] = 4.0f;
+        }
+
         // ensure the robot is in default control
         msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
         msc_->SetTimeout(5.0f);
@@ -379,16 +424,24 @@ public:
         // set a zero stiffness and small damping as fallback
         // they should be overwritten by the user control shortly
         for (int i = 0; i < this->njoints_; i++) {
-            this->robot_data_.joint_stiffness[i] = 0.0f;
-            this->robot_data_.joint_damping[i] = 4.0f;
+            this->joint_position_target_[i] = 0.0f;
+            this->joint_velocity_target_[i] = 0.0f;
+            this->joint_stiffness_[i] = 0.0f;
+            this->joint_damping_[i] = 4.0f;
         }
 
         // set the wrist joints to the default stiffness and damping
         for (int i : wrist_joint_indices) {
-            this->robot_data_.q_target[i] = 0.0f;
-            this->robot_data_.dq_target[i] = 0.0f;
-            this->robot_data_.joint_stiffness[i] = default_wrist_stiffness;
-            this->robot_data_.joint_damping[i] = default_wrist_damping;
+            this->joint_position_target_[i] = 0.0f;
+            this->joint_velocity_target_[i] = 0.0f;
+            this->joint_stiffness_[i] = default_wrist_stiffness;
+            this->joint_damping_[i] = default_wrist_damping;
+        }
+        for (int i : elbow_joint_indices) {
+            this->joint_position_target_[i] = 0.6f;
+            this->joint_velocity_target_[i] = 0.0f;
+            this->joint_stiffness_[i] = default_wrist_stiffness;
+            this->joint_damping_[i] = default_wrist_damping;
         }
 
         std::cout << "Release Mode succeeded\n";

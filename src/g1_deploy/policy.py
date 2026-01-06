@@ -1,4 +1,3 @@
-import torch
 import onnxruntime as ort
 import numpy as np
 import yaml
@@ -37,15 +36,6 @@ class ONNXModule:
         # inputs = {name: value[None, ...] for name, value in inputs.items()}
         outputs = self.session.run(self.output_names, inputs)
         return {name: output for name, output in zip(self.output_names, outputs)}
-
-class TorchJitModule:
-    def __init__(self, torchscript_path: Path | str):
-        self.torchscript_path = torchscript_path
-        self.module = torch.jit.load(torchscript_path)
-    
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        outputs = self.module(input)
-        return outputs
 
 class Policy:
     def __init__(

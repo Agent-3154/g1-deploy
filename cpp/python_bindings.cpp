@@ -45,7 +45,7 @@ PYBIND11_MODULE(_cpp, m) {
         .def_readonly("root_pos_w", &RobotData<float>::root_pos_w)
         .def_readonly("root_quat_w", &RobotData<float>::quaternion)
         .def_readonly("root_lin_vel_w", &RobotData<float>::root_lin_vel_w)
-        .def_readonly("root_ang_vel_w", &RobotData<float>::root_ang_vel_w)
+        .def_readonly("root_ang_vel_b", &RobotData<float>::root_ang_vel_b)
         .def_readonly("q", &RobotData<float>::q)
         .def_readonly("joint_pos", &RobotData<float>::q)
         .def_readonly("dq", &RobotData<float>::dq)
@@ -54,7 +54,6 @@ PYBIND11_MODULE(_cpp, m) {
         .def_readonly("quaternion", &RobotData<float>::quaternion)
         .def_readonly("projected_gravity", &RobotData<float>::projected_gravity)
         .def_readonly("rpy", &RobotData<float>::rpy)
-        .def_readonly("omega", &RobotData<float>::omega)
         .def_readonly("body_positions", &RobotData<float>::body_positions)
         .def_readonly("body_quaternions", &RobotData<float>::body_quaternions)
         .def_readonly("is_user_control", &RobotData<float>::is_user_control_);
@@ -64,7 +63,7 @@ PYBIND11_MODULE(_cpp, m) {
         .def_readonly("root_pos_w", &RobotData<double>::root_pos_w)
         .def_readonly("root_quat_w", &RobotData<double>::quaternion)
         .def_readonly("root_lin_vel_w", &RobotData<double>::root_lin_vel_w)
-        .def_readonly("root_ang_vel_w", &RobotData<double>::root_ang_vel_w)
+        .def_readonly("root_ang_vel_b", &RobotData<double>::root_ang_vel_b)
         .def_readonly("q", &RobotData<double>::q)
         .def_readonly("joint_pos", &RobotData<double>::q)
         .def_readonly("dq", &RobotData<double>::dq)
@@ -73,7 +72,6 @@ PYBIND11_MODULE(_cpp, m) {
         .def_readonly("quaternion", &RobotData<double>::quaternion)
         .def_readonly("projected_gravity", &RobotData<double>::projected_gravity)
         .def_readonly("rpy", &RobotData<double>::rpy)
-        .def_readonly("omega", &RobotData<double>::omega)
         .def_readonly("body_positions", &RobotData<double>::body_positions)
         .def_readonly("body_quaternions", &RobotData<double>::body_quaternions)
         .def_readonly("is_user_control", &RobotData<double>::is_user_control_);

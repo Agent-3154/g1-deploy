@@ -52,7 +52,7 @@ if __name__ == "__main__":
     hardware = args.hardware
     mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
     if hardware:
-        robot = g1_deploy.G1HardwareInterface("enp58s0")
+        robot = g1_deploy.G1HardwareInterface("eth0")
         robot.load_mjcf(str(mjcf_path)) # for computing FK
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
@@ -118,7 +118,7 @@ if __name__ == "__main__":
                 ),
             )
     
-    viewer = mujoco.viewer.launch_passive(mjModel, mjData)
+    # viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
     timer = Timer(control_dt)
     for i in itertools.count():
@@ -142,8 +142,8 @@ if __name__ == "__main__":
         else:
             robot.apply_action(0.8)
 
-        if i % 500 == 0:
-            robot.reset()
+        # if i % 500 == 0:
+        #     robot.reset()
         
         if use_rerun:
             rr.set_time("step", timestamp=i)
@@ -157,6 +157,15 @@ if __name__ == "__main__":
                     f"robot/{body_name}",
                     rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
                 )
-        viewer.sync()
+            rr.log(
+                f"ground",
+                rr.Boxes3D(
+                    centers=np.array([0, 0, -0.01]),
+                    half_sizes=np.array([10, 10, 0.02]),
+                    colors=np.array([255, 255, 255]),
+                    fill_mode="solid"
+                )
+            )
+        # viewer.sync()
         timer.sleep()
 

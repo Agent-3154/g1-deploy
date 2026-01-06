@@ -84,6 +84,12 @@ class root_quat_w(Observation):
     def compute(self):
         return self.articulation.root_quat_w
 
+class root_linvel_b(Observation):
+    def compute(self):
+        root_quat_w = self.articulation.root_quat_w
+        root_lin_vel_w = self.articulation.root_lin_vel_w
+        return quat_rotate_inverse(root_quat_w, root_lin_vel_w)
+
 class root_angvel_b(Observation):
     def compute(self):
         root_quat_w = self.articulation.root_quat_w
