@@ -10,6 +10,7 @@ from g1_deploy.utils.math import (
     quat_conjugate,
     subtract_frame_transforms,
 )
+# from track.track import command
 
 
 class motion_command:
@@ -119,10 +120,14 @@ class ref_kp_pos_b(Observation):
 
 
 class ref_root_quat(Observation):
+    def __init__(self, articulation: Articulation, command: motion_command, anchor_body_name: str = "torso_link"):
+        super().__init__(articulation, command)
+        self.anchor_index = self.articulation.find_bodies(anchor_body_name)[0][0]
+
     def compute(self):
         t = min(self.articulation.t, self.command.motion_length - 1)
         # Use get_aligned_body_state to get aligned reference body states
-        _, aligned_body_quat_w = self.command.get_aligned_body_state(t)
+        _, aligned_body_quat_w = self.command.get_aligned_body_state(t, self.anchor_index)
         # Root body is at index 0 (pelvis)
         ref_root_quat_w = aligned_body_quat_w[0]
         root_quat_w = self.articulation.root_quat_w
@@ -161,14 +166,15 @@ class ref_anchor_quat(Observation):
 
 
 class ref_kp_pos_gap(Observation):
-    def __init__(self, articulation: Articulation, body_names: List[str]):
-        super().__init__(articulation)
+    def __init__(self, articulation: Articulation, command: motion_command, body_names: List[str], anchor_body_name: str = "torso_link"):
+        super().__init__(articulation, command)
         self.body_indices = self.articulation.find_bodies(body_names)[0]
+        self.anchor_index = self.articulation.find_bodies(anchor_body_name)[0][0]
 
     def compute(self):
         t = min(self.articulation.t, self.command.motion_length - 1)
         # Use get_aligned_body_state to get aligned reference body states
-        aligned_body_pos_w, aligned_body_quat_w = self.command.get_aligned_body_state(t)
+        aligned_body_pos_w, aligned_body_quat_w = self.command.get_aligned_body_state(t, self.anchor_index)
         ref_kp_pos = aligned_body_pos_w[self.body_indices]
         ref_kp_quat = aligned_body_quat_w[self.body_indices]
 

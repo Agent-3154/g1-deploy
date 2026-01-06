@@ -2,7 +2,7 @@ import numpy as np
 from typing import Optional, Any, List, Union
 from g1_deploy.base import Observation, Articulation
 
-from g1_deploy.utils.math import quat_rotate_inverse
+from g1_deploy.utils.math import quat_rotate_inverse, quat_mul, quat_conjugate
 
 
 class command(Observation):
@@ -53,6 +53,20 @@ class body_pos_b(Observation):
         body_pos_w = self.articulation.body_pos_w[self.body_indices]
         body_pos_b = quat_rotate_inverse(root_quat_w, body_pos_w - root_pos_w)
         return body_pos_b.flatten()
+
+class body_ori_b(Observation):
+    def __init__(self, articulation: Articulation, body_names: List[str], command: Optional[Any] = None):
+        super().__init__(articulation)
+        self.body_indices = self.articulation.find_bodies(body_names)[0]
+    
+    def compute(self):
+        root_quat_w = self.articulation.root_quat_w
+        body_quat_w = self.articulation.body_quat_w[self.body_indices]
+        
+        root_quat_conj = quat_conjugate(root_quat_w)
+        root_quat_conj = np.tile(root_quat_conj, (body_quat_w.shape[0], 1))
+        body_ori_b = quat_mul(root_quat_conj, body_quat_w)
+        return body_ori_b.flatten()
 
 
 class projected_gravity(Observation):

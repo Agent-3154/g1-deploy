@@ -211,3 +211,4 @@ checkpoints/
 MUJOCO_LOG.TXT
 
 stubs/
+data/

@@ -35,8 +35,8 @@ if __name__ == "__main__":
     # Replace "eth0" with your actual network interface name
     args = parse_args()
     
-    onnx_path = CKPT_DIR / "policy-12-28_17-02.onnx"
-    config_path = CFG_DIR / "loco.yaml"
+    onnx_path = CKPT_DIR / "policy-01-06_22-14.onnx"
+    config_path = CFG_DIR / "test.yaml"
 
     # onnx_path = CKPT_DIR / "policy-12-30_14-47.onnx"
     # config_path = CFG_DIR / "cfg" / "loco_body.yaml"
@@ -77,8 +77,11 @@ if __name__ == "__main__":
     )
 
     if config.get("command", None) is not None:
-        from g1_deploy.ref_motion import RefMotion
-        command = RefMotion(**config["command"])
+        from g1_deploy.commands.ref_motion import RefMotion
+        command = RefMotion(
+                        robot,
+                        **config["command"]
+                )
 
     observation_config = config["observation"]
     observation_groups = {}
@@ -89,7 +92,7 @@ if __name__ == "__main__":
             kwargs = {"command": command}
             if observation_config is not None:
                 kwargs.update(observation_config)
-            observation = observation_class(robot, **observation_config)
+            observation = observation_class(robot, **kwargs)
             observation_groups[group_name].append(observation)
     
     def compute_observations():
