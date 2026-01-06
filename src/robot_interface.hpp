@@ -3,6 +3,7 @@
 #include <unitree/idl/hg/IMUState_.hpp>
 #include <unitree/idl/hg/LowCmd_.hpp>
 #include <unitree/idl/hg/LowState_.hpp>
+#include <unitree/idl/go2/SportModeState_.hpp>
 
 #include <mujoco/mujoco.h>
 #include <Eigen/Dense>
@@ -21,6 +22,7 @@
 using namespace unitree::common;
 using namespace unitree::robot;
 using namespace unitree_hg::msg::dds_;
+using namespace unitree_go::msg::dds_;
 
 const std::array<int, 6> wrist_joint_indices = {23, 24, 25, 26, 27, 28};
 const float default_wrist_stiffness = 16.0f;
@@ -141,6 +143,11 @@ protected:
     void computeFK() {
         if (this->model_ && this->data_) {
             // Copy robot_data_ into data_ to compute FK
+            // Root position: qpos[0:3] = [x, y, z]
+            std::copy(this->robot_data_.root_pos_w.begin(),
+                        this->robot_data_.root_pos_w.end(),
+                        this->data_->qpos);
+
             // Root quaternion: qpos[3:7] = [w, x, y, z]
             std::copy(this->robot_data_.quaternion.begin(),
                         this->robot_data_.quaternion.end(),
@@ -238,6 +245,7 @@ private:
     ThreadPtr lowcmd_thread_; // thread for writing lowcmd
     ChannelSubscriberPtr<LowState_> lowstate_subscriber_;
     ChannelPublisherPtr<LowCmd_> lowcmd_publisher_;
+    ChannelSubscriberPtr<SportModeState_> estimate_state_subscriber_;
 
     std::shared_ptr<b2::MotionSwitcherClient> msc_;
     std::shared_ptr<g1::LocoClient> loco_client_;
@@ -292,6 +300,13 @@ private:
         }
     }
 
+    void OdomMessageHandler(const void* message){
+        SportModeState_ state = *(SportModeState_*)message;
+        this->robot_data_.root_pos_w[0] = state.position()[0];
+        this->robot_data_.root_pos_w[1] = state.position()[1];
+        this->robot_data_.root_pos_w[2] = state.position()[2];
+    }
+
     void LowCommandWriter() {
         if (control_state_ == ControlState::USER_CONTROL) {
             LowCmd_ dds_low_command;
@@ -334,6 +349,9 @@ public:
 
         lowcmd_publisher_.reset(new ChannelPublisher<LowCmd_>("rt/lowcmd"));
         lowcmd_publisher_->InitChannel();
+
+        estimate_state_subscriber_.reset(new ChannelSubscriber<SportModeState_>("rt/odommodestate"));
+        estimate_state_subscriber_->InitChannel(std::bind(&G1HarwareInterface::OdomMessageHandler, this, std::placeholders::_1), 1);
 
         // ensure the robot is in default control
         msc_ = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();

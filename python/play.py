@@ -39,7 +39,7 @@ if __name__ == "__main__":
     # config_path = Path(__file__).parent.parent / "cfg" / "loco_body.yaml"
     
     # onnx_path = Path(__file__).parent.parent / "checkpoints" / "motion.onnx"
-    onnx_path = Path(__file__).parent.parent / "checkpoints" / "policy-12-30_15-28.onnx"
+    onnx_path = Path(__file__).parent.parent / "checkpoints" / "policy-01-06_12-38.onnx"
     config_path = Path(__file__).parent.parent / "cfg" / "test.yaml"
     
     onnx_module = ONNXModule(onnx_path)
@@ -125,12 +125,15 @@ if __name__ == "__main__":
         inputs.update(compute_observations())
         action = onnx_module.forward(inputs)["action"]
         # action = onnx_module.forward(inputs)["linear_4"]
-        robot.apply_action(action)
 
+        robot.process_action(action)
         if args.sync:
             decimation = int(0.02 / robot.robot.get_timestep())
             for _ in range(decimation):
                 robot.robot.step()
+                robot.apply_action(0.8)
+        else:
+            robot.apply_action(0.8)
 
         if i % 500 == 0:
             robot.reset()
