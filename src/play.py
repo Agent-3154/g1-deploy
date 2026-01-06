@@ -7,6 +7,7 @@ import argparse
 import rerun as rr
 import itertools
 import yaml
+import os
 from pathlib import Path
 
 import g1_deploy
@@ -18,7 +19,8 @@ from g1_deploy.utils import extract_meshes, Timer
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hardware", action="store_true", help="Use hardware interface")
-    parser.add_argument("--rerun", action="store_true", help="Use rerun")
+    parser.add_argument("--rerun_local", "-rl", action="store_true", help="Use rerun")
+    parser.add_argument("--rerun_remote", "-rr", action="store_true", help="Use rerun")
     parser.add_argument("--sync", action="store_true", help="Use sync mode")
     return parser.parse_args()
 
@@ -94,11 +96,17 @@ if __name__ == "__main__":
             results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
         return results
 
-    if args.rerun:
+    use_rerun = args.rerun_local or args.rerun_remote
+    if use_rerun:
         meshes = extract_meshes(mjModel)
         print(len(meshes))
         rr.init("g1", recording_id="g1")
-        rr.spawn()
+        if args.rerun_remote:
+            ip = os.environ.get("RERUN_IP")
+            port = os.environ.get("RERUN_PORT", 9876)
+            rr.connect_grpc(f"rerun+http://{ip}:{port}/proxy")
+        else:
+            rr.spawn()
         rr.set_time("step", timestamp=0.0)
         for body_name, mesh in meshes.items():
             rr.log(
@@ -124,7 +132,6 @@ if __name__ == "__main__":
         inputs = onnx_module.dummy_input()
         inputs.update(compute_observations())
         action = onnx_module.forward(inputs)["action"]
-        # action = onnx_module.forward(inputs)["linear_4"]
         robot.apply_action(action)
 
         if args.sync:
@@ -135,7 +142,7 @@ if __name__ == "__main__":
         if i % 500 == 0:
             robot.reset()
         
-        if args.rerun:
+        if use_rerun:
             rr.set_time("step", timestamp=i)
             # xpos = mjData.xpos[1:]
             # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]

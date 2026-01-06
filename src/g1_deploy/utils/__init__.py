@@ -7,10 +7,6 @@ from .math import (
     quat_apply, 
     quat_mul, 
     subtract_frame_transforms,
-    joint_names_isaac as JOINT_NAMES_ISAAC,
-    joint_names_mujoco as JOINT_NAMES_MUJOCO,
-    body_names_isaac as BODY_NAMES_ISAAC,
-    body_names_mujoco as BODY_NAMES_MUJOCO
 )
 from .visualization import extract_meshes
 from .timerfd import Timer
@@ -25,10 +21,6 @@ __all__ = [
     "quat_apply",
     "quat_mul",
     "subtract_frame_transforms",
-    "JOINT_NAMES_ISAAC",
-    "JOINT_NAMES_MUJOCO",
-    "BODY_NAMES_ISAAC",
-    "BODY_NAMES_MUJOCO",
     "extract_meshes",
     "Timer"
 ]
