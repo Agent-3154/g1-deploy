@@ -34,18 +34,10 @@ if __name__ == "__main__":
     # Create a G1Interface instance
     # Replace "eth0" with your actual network interface name
     args = parse_args()
+    config_path = CFG_DIR / "policy-1781wsjf-final.yaml"
     
-    onnx_path = CKPT_DIR / "policy-12-28_17-02.onnx"
-    config_path = CFG_DIR / "loco.yaml"
-
-    # onnx_path = CKPT_DIR / "policy-12-30_14-47.onnx"
-    # config_path = CFG_DIR / "cfg" / "loco_body.yaml"
-    
-    # onnx_path = CKPT_DIR / "policy-12-30_15-28.onnx"
-    # config_path = CFG_DIR / "cfg" / "test.yaml"
-    
-    onnx_module = ONNXModule(onnx_path)
-    print(onnx_module)
+    # onnx_module = ONNXModule(onnx_path)
+    # print(onnx_module)
 
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -124,32 +116,24 @@ if __name__ == "__main__":
     timer = Timer(control_dt)
     for i in itertools.count():
         data = robot.data
-        mjData.qpos[0:3] = data.root_pos_w
-        mjData.qpos[3:7] = data.quaternion
-        mjData.qpos[7:] = data.q
-        mjData.qvel[6:] = data.dq
-        mujoco.mj_forward(mjModel, mjData)
+        # inputs = onnx_module.dummy_input()
+        # inputs.update(compute_observations())
+        # action = onnx_module.forward(inputs)["action"]
+        # robot.process_action(action)
 
-        inputs = onnx_module.dummy_input()
-        inputs.update(compute_observations())
-        action = onnx_module.forward(inputs)["action"]
-        robot.process_action(action)
-
-        if args.sync:
-            decimation = int(control_dt / robot.robot.get_timestep())
-            for _ in range(decimation):
-                robot.robot.step()
-                robot.apply_action(0.8)
-        else:
-            robot.apply_action(0.8)
+        # if args.sync:
+        #     decimation = int(control_dt / robot.robot.get_timestep())
+        #     for _ in range(decimation):
+        #         robot.robot.step()
+        #         robot.apply_action(0.8)
+        # else:
+        #     robot.apply_action(0.8)
 
         # if i % 500 == 0:
         #     robot.reset()
         
         if use_rerun:
             rr.set_time("step", timestamp=i)
-            # xpos = mjData.xpos[1:]
-            # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]
 
             xpos = np.asarray(data.body_positions)
             xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]

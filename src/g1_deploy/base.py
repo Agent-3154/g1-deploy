@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Union, List, NamedTuple
+from typing import Union, List, NamedTuple, Optional, Any
 
 from g1_deploy import G1HardwareInterface, G1MujocoInterface
 from g1_deploy.utils.string import (
@@ -144,4 +144,27 @@ class Articulation:
     @property
     def body_quat_w(self):
         return np.asarray(self.data.body_quaternions)[self.body_indexing.mujoco2isaac]
+
+
+class Observation:
+    
+    registry = {}
+
+    def __init__(
+        self,
+        articulation: Articulation,
+        command: Optional[Any] = None,
+    ):
+        self.articulation = articulation
+        self.command = command
+    
+    def __init_subclass__(cls):
+        cls_name = cls.__name__
+        cls.registry[cls_name] = cls
+
+    def __call__(self):
+        return self.compute()
+    
+    def compute(self):
+        raise NotImplementedError
 

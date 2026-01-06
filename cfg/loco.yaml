@@ -2,7 +2,7 @@ observation:
   policy:
     command:
     root_angvel_b:  {}
-    gravity_multistep: {steps: 4}
+    projected_gravity: {steps: 4}
     joint_pos_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     joint_vel_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     prev_actions: {steps: 2}
