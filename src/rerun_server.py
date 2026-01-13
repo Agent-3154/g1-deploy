@@ -1,6 +1,6 @@
 import mujoco
 import rerun as rr
-from utils import extract_meshes
+from g1_deploy.utils import extract_meshes
 from pathlib import Path
 
 mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"

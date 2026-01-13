@@ -47,6 +47,11 @@ find_package(pybind11 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Fix RPATH issues with Ninja generator
+# This allows the build to use install RPATH from the start, avoiding relinking
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -77,40 +82,8 @@ message(STATUS "MuJoCo (pip) package dir: ${MUJOCO_PY_DIR}")
 message(STATUS "MuJoCo lib:           ${MUJOCO_LIB}")
 message(STATUS "MuJoCo include dir:       ${MUJOCO_INCLUDE_DIR}")
 
-# Include FetchContent for downloading dependencies
-include(FetchContent)
-# Fetch Rerun SDK
-FetchContent_Declare(
-    rerun_sdk
-    URL https://github.com/rerun-io/rerun/releases/latest/download/rerun_cpp_sdk.zip
-)
-FetchContent_MakeAvailable(rerun_sdk)
-
 # Generate a compile_commands.json file for tooling support
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Add executable
-add_executable(g1-deploy
-  cpp/main.cpp
-)
-
-# Include directories
-target_include_directories(g1-deploy PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${MUJOCO_INCLUDE_DIR}
-)
-
-# Link libraries
-target_link_libraries(g1-deploy PRIVATE
-    unitree_sdk2
-    ${MUJOCO_LIB}
-    Threads::Threads
-    Eigen3::Eigen
-    dl
-)
-
-target_link_libraries(g1-deploy PRIVATE rerun_sdk)
 
 # Python module
 # Note: Module name is _cpp to match the import in g1_deploy/__init__.py
