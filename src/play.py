@@ -51,16 +51,15 @@ if __name__ == "__main__":
         config = yaml.load(f, Loader=yaml.FullLoader)
     
     hardware = args.hardware
-    mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
     if hardware:
-        robot = g1_deploy.G1HardwareInterface("eth0")
-        robot.load_mjcf(str(mjcf_path)) # for computing FK
+        mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
+        robot = g1_deploy.G1HardwareInterface("wlp7s0", str(mjcf_path))
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
-        scene_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
-        robot = g1_deploy.G1MujocoInterface(str(scene_path))
+        mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
+        robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
         robot.run(sync=args.sync)
-        mjModel = mujoco.MjModel.from_xml_path(str(scene_path))
+        mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
         print(f"timestep: {robot.get_timestep()}")
 
     mjData = mujoco.MjData(mjModel)

@@ -380,7 +380,10 @@ private:
     }
 
 public:
-    G1HardwareInterface(std::string networkInterface) {
+    G1HardwareInterface(std::string networkInterface, std::string mjcf_path) {
+
+        this->loadMJCF(mjcf_path);
+
         ChannelFactory::Instance()->Init(0, networkInterface);
 
         lowstate_subscriber_.reset(new ChannelSubscriber<LowState_>("rt/lowstate"));
