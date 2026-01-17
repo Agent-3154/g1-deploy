@@ -9,6 +9,7 @@ from g1_deploy.utils.math import (
     quat_inv,
     quat_conjugate,
     subtract_frame_transforms,
+    matrix_from_quat,
 )
 # from track.track import command
 
@@ -96,91 +97,34 @@ class ref_motion_phase(Observation):
         ref_motion_phase = (self.command.t % self.motion_steps) / self.motion_steps
         return ref_motion_phase.reshape(-1)
 
-
-class ref_root_quat_w(Observation):
-    def compute(self):
-        ref_motion = self.command
-        t = min(self.articulation.t, ref_motion.motion_length)
-        return ref_motion.root_quat_w[t]
-
-
-class ref_kp_pos_b(Observation):
-    def __init__(self, articulation: Articulation, body_names: List[str], command: Optional[Any] = None):
-        super().__init__(articulation)
-        self.body_indices = self.articulation.find_bodies(body_names)[0]
-    
-    def compute(self):
-        root_quat_w = self.articulation.root_quat_w
-        body_quat_w = self.articulation.body_quat_w[self.body_indices]
-        root_quat_conj = quat_conjugate(root_quat_w)
-        # Expand root_quat_conj to match body_quat_w shape: (4,) -> (n_bodies, 4)
-        root_quat_conj = np.tile(root_quat_conj, (body_quat_w.shape[0], 1))
-        body_ori_b = quat_mul(root_quat_conj, body_quat_w)
-        return body_ori_b.flatten()
-
+from g1_deploy.commands import RefMotion
 
 class ref_root_quat(Observation):
-    def __init__(self, articulation: Articulation, command: motion_command, anchor_body_name: str = "torso_link"):
+    def __init__(self, articulation: Articulation, command: RefMotion):
         super().__init__(articulation, command)
-        self.anchor_index = self.articulation.find_bodies(anchor_body_name)[0][0]
 
     def compute(self):
         t = min(self.articulation.t, self.command.motion_length - 1)
-        # Use get_aligned_body_state to get aligned reference body states
-        _, aligned_body_quat_w = self.command.get_aligned_body_state(t, self.anchor_index)
-        # Root body is at index 0 (pelvis)
-        ref_root_quat_w = aligned_body_quat_w[0]
+        
+        ref_root_pos_w = self.command.root_pos_w[t]
+        ref_root_quat_w = self.command.root_quat_w[t]
+        root_pos_w = self.articulation.root_pos_w
         root_quat_w = self.articulation.root_quat_w
-        quat_error = quat_mul(quat_inv(root_quat_w), ref_root_quat_w)
-        return quat_error.reshape(-1)
-
-
-class ref_anchor_pos(Observation):
-    def __init__(self, articulation: Articulation, anchor_body_name: str):
-        super().__init__(articulation)
-        self.anchor_body_index = articulation.find_bodies(anchor_body_name)[0][0]
-
-    def compute(self):
-        t = min(self.articulation.t, self.command.motion_length - 1)
-        ref_anchor_pos = self.command.body_pos_w[t, self.anchor_body_index]
-        ref_anchor_quat = self.command.body_quat_w[t, self.anchor_body_index]
-        anchor_pos = self.articulation.body_pos_w[self.anchor_body_index]
-        anchor_quat = self.articulation.body_quat_w[self.anchor_body_index]
-        pos, _ = subtract_frame_transforms(anchor_pos, anchor_quat, ref_anchor_pos, ref_anchor_quat)
-        return pos.reshape(-1)
-
-
-class ref_anchor_quat(Observation):
-    def __init__(self, articulation: Articulation, anchor_body_name: str):
-        super().__init__(articulation)
-        self.anchor_body_index = articulation.find_bodies(anchor_body_name)[0][0]
-
-    def compute(self):
-        t = min(self.articulation.t, self.command.motion_length - 1)
-        ref_anchor_pos = self.command.body_pos_w[t, self.anchor_body_index]
-        ref_anchor_quat = self.command.body_quat_w[t, self.anchor_body_index]
-        anchor_pos = self.articulation.body_pos_w[self.anchor_body_index]
-        anchor_quat = self.articulation.body_quat_w[self.anchor_body_index]
-        _, quat = subtract_frame_transforms(anchor_pos, anchor_quat, ref_anchor_pos, ref_anchor_quat)
-        return quat.reshape(-1)
-
+        pos, quat = subtract_frame_transforms(root_pos_w, root_quat_w, ref_root_pos_w, ref_root_quat_w)
+        mat = matrix_from_quat(quat)
+        return mat[..., :2].reshape(-1)
 
 class ref_kp_pos_gap(Observation):
-    def __init__(self, articulation: Articulation, command: motion_command, body_names: List[str], anchor_body_name: str = "torso_link"):
+    def __init__(self, articulation: Articulation, command: RefMotion, body_names: List[str]):
         super().__init__(articulation, command)
         self.body_indices = self.articulation.find_bodies(body_names)[0]
-        self.anchor_index = self.articulation.find_bodies(anchor_body_name)[0][0]
 
     def compute(self):
         t = min(self.articulation.t, self.command.motion_length - 1)
-        # Use get_aligned_body_state to get aligned reference body states
-        aligned_body_pos_w, aligned_body_quat_w = self.command.get_aligned_body_state(t, self.anchor_index)
-        ref_kp_pos = aligned_body_pos_w[self.body_indices]
-        ref_kp_quat = aligned_body_quat_w[self.body_indices]
-
+        
+        ref_kp_pos = self.command.body_pos_w[t, self.body_indices]
+        ref_kp_quat = self.command.body_quat_w[t, self.body_indices]
         body_kp_pos = self.articulation.body_pos_w[self.body_indices]
         body_kp_quat = self.articulation.body_quat_w[self.body_indices]
-
         pos, _ = subtract_frame_transforms(body_kp_pos, body_kp_quat, ref_kp_pos, ref_kp_quat)
-        return pos.flatten()
-
+        return pos.reshape(-1)

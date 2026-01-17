@@ -41,9 +41,9 @@ action:
     .*ankle.*: 0.439
     .*shoulder.*: 0.173
     .*elbow_joint: 0.173
-    .*wrist_roll.*: 0.173
-    .*wrist_pitch.*: 0.293
-    .*wrist_yaw.*: 0.293
+    # .*wrist_roll.*: 0.173
+    # .*wrist_pitch.*: 0.293
+    # .*wrist_yaw.*: 0.293
 
 default_joint_pos:
   .*_hip_pitch.*: -0.1

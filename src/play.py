@@ -35,7 +35,7 @@ if __name__ == "__main__":
     # Replace "eth0" with your actual network interface name
     args = parse_args()
     
-    onnx_path = CKPT_DIR / "policy-01-06_22-14.onnx"
+    onnx_path = CKPT_DIR / "policy-01-17_11-04.onnx"
     config_path = CFG_DIR / "test.yaml"
 
     # onnx_path = CKPT_DIR / "policy-12-30_14-47.onnx"
@@ -75,12 +75,16 @@ if __name__ == "__main__":
         config["damping"],
     )
 
+    print(f"Current root_pos_w: {robot.root_pos_w}")
+    print(f"Current root_quat_w: {robot.root_quat_w}")
+
     if config.get("command", None) is not None:
         from g1_deploy.commands.ref_motion import RefMotion
         command = RefMotion(
                         robot,
                         **config["command"]
                 )
+        command.enter(robot.root_pos_w, robot.root_quat_w)
 
     observation_config = config["observation"]
     observation_groups = {}
@@ -128,6 +132,10 @@ if __name__ == "__main__":
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
     timer = Timer(control_dt)
+
+    last_real_time = time.perf_counter()
+    last_sim_time = mjData.time
+
     for i in itertools.count():
         data = robot.data
         mjData.qpos[0:3] = data.root_pos_w
@@ -149,8 +157,21 @@ if __name__ == "__main__":
         else:
             robot.apply_action(0.8)
 
-        # if i % 500 == 0:
-        #     robot.reset()
+        mjData.time += control_dt
+        if i % 100 == 0:
+            current_real_time = time.perf_counter()
+            current_sim_time = mjData.time
+            
+            real_time_delta = current_real_time - last_real_time
+            sim_time_delta = current_sim_time - last_sim_time
+            
+            realtime_ratio = sim_time_delta / real_time_delta
+            fps = 100 / real_time_delta
+            
+            print(f"FPS: {fps:.1f} | Sim/Real ratio: {realtime_ratio:.1f}")
+            
+            last_real_time = current_real_time
+            last_sim_time = current_sim_time
         
         if use_rerun:
             rr.set_time("step", timestamp=i)

@@ -101,6 +101,37 @@ def quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
 
     return np.stack([w, x, y, z], axis=-1).reshape(shape)
 
+def matrix_from_quat(quaternions: np.ndarray) -> np.ndarray:
+    """
+    Args:
+        quaternions: The quaternion orientation in (w, x, y, z). Shape is (..., 4).
+
+    Returns:
+        Rotation matrices. The shape is (..., 3, 3).
+    """
+    r = quaternions[..., 0]
+    i = quaternions[..., 1]
+    j = quaternions[..., 2]
+    k = quaternions[..., 3]
+
+    two_s = 2.0 / np.sum(quaternions * quaternions, axis=-1)
+
+    o = np.stack(
+        (
+            1 - two_s * (j * j + k * k),
+            two_s * (i * j - k * r),
+            two_s * (i * k + j * r),
+            two_s * (i * j + k * r),
+            1 - two_s * (i * i + k * k),
+            two_s * (j * k - i * r),
+            two_s * (i * k - j * r),
+            two_s * (j * k + i * r),
+            1 - two_s * (i * i + j * j),
+        ),
+        axis=-1,
+    )
+    return o.reshape(quaternions.shape[:-1] + (3, 3))
+
 def subtract_frame_transforms(
     t01: np.ndarray, q01: np.ndarray, t02: np.ndarray = None, q02: np.ndarray = None
 ):

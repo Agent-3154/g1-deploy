@@ -2,7 +2,10 @@ import numpy as np
 from typing import Optional, Any, List, Union
 from g1_deploy.base import Observation, Articulation
 
-from g1_deploy.utils.math import quat_rotate_inverse, quat_mul, quat_conjugate
+from g1_deploy.utils.math import (
+    quat_rotate_inverse, quat_mul, 
+    quat_conjugate, matrix_from_quat
+)
 
 
 class command(Observation):
@@ -12,7 +15,9 @@ class command(Observation):
 
 class root_quat_w(Observation):
     def compute(self):
-        return self.articulation.root_quat_w
+        root_quat_w = self.articulation.root_quat_w
+        mat = matrix_from_quat(root_quat_w)
+        return mat[..., :2].reshape(-1)
 
 
 class root_linvel_b(Observation):
@@ -66,7 +71,8 @@ class body_ori_b(Observation):
         root_quat_conj = quat_conjugate(root_quat_w)
         root_quat_conj = np.tile(root_quat_conj, (body_quat_w.shape[0], 1))
         body_ori_b = quat_mul(root_quat_conj, body_quat_w)
-        return body_ori_b.flatten()
+        body_ori_b_mat = matrix_from_quat(body_ori_b)
+        return body_ori_b_mat[..., :2].flatten()
 
 
 class projected_gravity(Observation):
