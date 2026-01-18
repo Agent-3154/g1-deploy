@@ -157,21 +157,14 @@ if __name__ == "__main__":
         else:
             robot.apply_action(0.8)
 
-        mjData.time += control_dt
         if i % 100 == 0:
             current_real_time = time.perf_counter()
-            current_sim_time = mjData.time
-            
             real_time_delta = current_real_time - last_real_time
-            sim_time_delta = current_sim_time - last_sim_time
-            
-            realtime_ratio = sim_time_delta / real_time_delta
             fps = 100 / real_time_delta
             
-            print(f"FPS: {fps:.1f} | Sim/Real ratio: {realtime_ratio:.1f}")
+            print(f"FPS: {fps:.1f}")
             
             last_real_time = current_real_time
-            last_sim_time = current_sim_time
         
         if use_rerun:
             rr.set_time("step", timestamp=i)

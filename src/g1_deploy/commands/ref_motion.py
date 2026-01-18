@@ -21,7 +21,7 @@ class RefMotion:
         motion_file = Path(__file__).parent.parent / "checkpoints" / motion_file 
         with open(motion_file, "rb") as f:
             motions = joblib.load(f)
-            motion_name = list(motions.keys())[0]
+            motion_name = list(motions.keys())[4]
             print("Loading motion: ", motion_name)
             motion = motions[motion_name]
             self.fps = motion["fps"]

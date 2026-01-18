@@ -565,6 +565,7 @@ private:
     }
 
     void updateState() {
+        std::lock_guard<std::mutex> lock(step_mutex_);
         if (this->model_ && this->data_) {
             // Joint positions: qpos[7:] (skip root position + quaternion, copy up to 29 joints)
             if (this->njoints_ > 0) {
