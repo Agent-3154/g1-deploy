@@ -158,6 +158,7 @@ protected:
     RobotData<T> robot_data_;
     mjModel *model_;
     mjData *data_;
+    std::mutex step_mutex_;
     ControlState control_state_ = ControlState::BUILTIN_CONTROL;
 
     void computeFK() {
@@ -241,18 +242,22 @@ public:
     }
 
     void setJointStiffness(const std::array<T, 29> &joint_stiffness) {
+        std::lock_guard<std::mutex> lock(step_mutex_);
         this->robot_data_.joint_stiffness = joint_stiffness;
     }
 
     void setJointDamping(const std::array<T, 29> &joint_damping) {
+        std::lock_guard<std::mutex> lock(step_mutex_);
         this->robot_data_.joint_damping = joint_damping;
     }
 
     void writeJointPositionTarget(const std::array<T, 29> &joint_position_target) {
+        std::lock_guard<std::mutex> lock(step_mutex_);
         this->robot_data_.q_target = joint_position_target;
     }
 
     void writeJointVelocityTarget(const std::array<T, 29> &joint_velocity_target) {
+        std::lock_guard<std::mutex> lock(step_mutex_);
         this->robot_data_.dq_target = joint_velocity_target;
     }
 };
@@ -539,7 +544,6 @@ private:
     std::thread physics_thread_;
     std::atomic<bool> running_;
     std::atomic<bool> should_stop_;
-    std::mutex step_mutex_;
     double timestep_;  // Physics timestep in ssereconds
 
     void physicsStep() {

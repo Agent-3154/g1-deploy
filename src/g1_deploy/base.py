@@ -98,7 +98,6 @@ class Articulation:
         joint_position_target[self.action_joint_ids] += self.applied_action * self.action_scaling
         
         self.robot.write_joint_position_target(joint_position_target[self.joint_indexing.isaac2mujoco])
-        self.t += 1
 
     def reset(self):
         self.robot.reset(self.default_joint_pos[self.joint_indexing.isaac2mujoco])

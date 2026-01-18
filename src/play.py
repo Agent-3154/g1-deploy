@@ -148,14 +148,16 @@ if __name__ == "__main__":
         inputs.update(compute_observations())
         action = onnx_module.forward(inputs)["action"]
         robot.process_action(action)
+        alpha = 0.8
 
         if args.sync:
             decimation = int(control_dt / robot.robot.get_timestep())
             for _ in range(decimation):
+                robot.apply_action(alpha)
                 robot.robot.step()
-                robot.apply_action(0.8)
         else:
-            robot.apply_action(0.8)
+            robot.apply_action(alpha)
+        robot.t += 1
 
         if i % 100 == 0:
             current_real_time = time.perf_counter()
