@@ -53,9 +53,8 @@ if __name__ == "__main__":
     else:
         mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
         robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
-        robot.run(sync=args.sync)
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
-        print(f"timestep: {robot.get_timestep()}")
+    print(f"timestep: {robot.get_timestep()}")
 
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
@@ -125,6 +124,9 @@ if __name__ == "__main__":
                 ),
             )
     
+    if not hardware:
+        robot.robot.run(sync=args.sync)
+
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
     timer = Timer(control_dt)
@@ -155,13 +157,13 @@ if __name__ == "__main__":
             robot.apply_action(alpha)
         robot.t += 1
 
-        if i % 100 == 0:
+        if i % 50 == 0:
             current_real_time = time.perf_counter()
             real_time_delta = current_real_time - last_real_time
-            fps = 100 / real_time_delta
+            fps = 50 / real_time_delta
             
             print(f"FPS: {fps:.1f}")
-            print(f"robot linvel: {data.root_lin_vel_b}")
+
             last_real_time = current_real_time
         
         if use_rerun:
