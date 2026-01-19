@@ -1,13 +1,14 @@
+onnx_path:
+  policy-01-17_18-27.onnx
+
 observation:
   policy:
     command:
-    root_angvel_b:  {}
+    # root_angvel_b:  {}
     projected_gravity: {steps: 4}
     joint_pos_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     joint_vel_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     prev_actions: {steps: 2}
-    root_linvel_b:    {}
-    body_height:  {body_names: .*ankle_roll_link}
 
 action:
   action_scaling: 

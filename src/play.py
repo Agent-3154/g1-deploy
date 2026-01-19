@@ -35,25 +35,20 @@ if __name__ == "__main__":
     # Replace "eth0" with your actual network interface name
     args = parse_args()
     
-    onnx_path = CKPT_DIR / "policy-01-17_11-04.onnx"
     config_path = CFG_DIR / "test.yaml"
-
-    # onnx_path = CKPT_DIR / "policy-12-30_14-47.onnx"
-    # config_path = CFG_DIR / "cfg" / "loco_body.yaml"
+    # config_path = CFG_DIR / "loco.yaml"
     
-    # onnx_path = CKPT_DIR / "policy-12-30_15-28.onnx"
-    # config_path = CFG_DIR / "cfg" / "test.yaml"
-    
-    onnx_module = ONNXModule(onnx_path)
-    print(onnx_module)
-
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+    
+    onnx_path = CKPT_DIR / config["onnx_path"]
+    onnx_module = ONNXModule(onnx_path)
+    print(onnx_module)
     
     hardware = args.hardware
     if hardware:
         mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
-        robot = g1_deploy.G1HardwareInterface("wlp7s0", str(mjcf_path))
+        robot = g1_deploy.G1HardwareInterface("eth0", str(mjcf_path))
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
         mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
@@ -78,6 +73,7 @@ if __name__ == "__main__":
     print(f"Current root_pos_w: {robot.root_pos_w}")
     print(f"Current root_quat_w: {robot.root_quat_w}")
 
+    command = None
     if config.get("command", None) is not None:
         from g1_deploy.commands.ref_motion import RefMotion
         command = RefMotion(
@@ -92,7 +88,7 @@ if __name__ == "__main__":
         observation_groups[group_name] = []
         for observation_name, observation_config in group_config.items():
             observation_class = Observation.registry[observation_name]
-            kwargs = {"command": command}
+            kwargs = {"command": command} if command is not None else {}
             if observation_config is not None:
                 kwargs.update(observation_config)
             observation = observation_class(robot, **kwargs)
