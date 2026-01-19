@@ -19,6 +19,7 @@ from g1_deploy.utils import extract_meshes, Timer
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--config", "-c", type=str, default="loco", help="Config file name")
     parser.add_argument("--hardware", action="store_true", help="Use hardware interface")
     parser.add_argument("--rerun_local", "-rl", action="store_true", help="Use rerun")
     parser.add_argument("--rerun_remote", "-rr", action="store_true", help="Use rerun")
@@ -35,8 +36,7 @@ if __name__ == "__main__":
     # Replace "eth0" with your actual network interface name
     args = parse_args()
     
-    config_path = CFG_DIR / "test.yaml"
-    # config_path = CFG_DIR / "loco.yaml"
+    config_path = CFG_DIR / f"{args.config}.yaml"
     
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -161,7 +161,7 @@ if __name__ == "__main__":
             fps = 100 / real_time_delta
             
             print(f"FPS: {fps:.1f}")
-            
+            print(f"robot linvel: {data.root_lin_vel_b}")
             last_real_time = current_real_time
         
         if use_rerun:

@@ -1,5 +1,6 @@
 onnx_path:
-  policy-01-17_18-27.onnx
+  # policy-01-17_18-27.onnx
+  policy-01-19_16-50.onnx
 
 observation:
   policy:
@@ -9,6 +10,13 @@ observation:
     joint_pos_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     joint_vel_multistep: {joint_names: "(?!(.*wrist.*)).*", steps: 4}
     prev_actions: {steps: 2}
+    root_linvel_b:    {}
+    body_pos_b:       {body_names: [left_hip_pitch_link, right_hip_pitch_link, 
+                                    left_knee_link, right_knee_link, 
+                                    left_ankle_roll_link, right_ankle_roll_link, 
+                                    left_shoulder_roll_link, right_shoulder_roll_link, 
+                                    left_elbow_link, right_elbow_link, 
+                                    left_wrist_yaw_link, right_wrist_yaw_link]}
 
 action:
   action_scaling: 
