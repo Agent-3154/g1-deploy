@@ -430,27 +430,10 @@ public:
                 std::cout << "Failed to switch to Release Mode\n";
             sleep(1);
         }
-        // set a zero stiffness and small damping as fallback
-        // they should be overwritten by the user control shortly
+        // Initialize q_target to current joint positions
         for (int i = 0; i < this->njoints_; i++) {
-            this->joint_position_target_[i] = 0.0f;
-            this->joint_velocity_target_[i] = 0.0f;
-            this->joint_stiffness_[i] = 0.0f;
-            this->joint_damping_[i] = 4.0f;
-        }
-
-        // set the wrist joints to the default stiffness and damping
-        for (int i : wrist_joint_indices) {
-            this->joint_position_target_[i] = 0.0f;
-            this->joint_velocity_target_[i] = 0.0f;
-            this->joint_stiffness_[i] = default_wrist_stiffness;
-            this->joint_damping_[i] = default_wrist_damping;
-        }
-        for (int i : elbow_joint_indices) {
-            this->joint_position_target_[i] = 0.6f;
-            this->joint_velocity_target_[i] = 0.0f;
-            this->joint_stiffness_[i] = default_wrist_stiffness;
-            this->joint_damping_[i] = default_wrist_damping;
+            this->robot_data_.q_target[i] = this->robot_data_.q[i];
+            this->robot_data_.dq_target[i] = 0.0f;
         }
 
         std::cout << "Release Mode succeeded\n";
@@ -734,6 +717,20 @@ public:
             mj_resetData(this->model_, this->data_);
             std::copy(joint_pos.begin(), joint_pos.end(), this->data_->qpos + 7);
             std::copy(joint_pos.begin(), joint_pos.end(), this->robot_data_.q_target.begin());
+        }
+    }
+
+    void set_root_pose(const std::array<double, 3> &pos, const std::array<double, 4> &quat) {
+        std::lock_guard<std::mutex> lock(step_mutex_);
+        if (this->model_ && this->data_) {
+            // Set position: qpos[0:3]
+            std::copy(pos.begin(), pos.end(), this->data_->qpos);
+            // Set quaternion: qpos[3:7] (w, x, y, z)
+            std::copy(quat.begin(), quat.end(), this->data_->qpos + 3);
+            // Update robot_data_ directly
+            std::copy(pos.begin(), pos.end(), this->robot_data_.root_pos_w.begin());
+            std::copy(quat.begin(), quat.end(), this->robot_data_.quaternion.begin());
+            mj_forward(this->model_, this->data_);
         }
     }
 

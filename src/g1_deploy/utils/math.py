@@ -1,5 +1,30 @@
 import numpy as np
 
+def quat_from_euler_xyz(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """Create quaternion from Euler angles (roll, pitch, yaw).
+    
+    Args:
+        roll: Rotation around x-axis in radians.
+        pitch: Rotation around y-axis in radians.
+        yaw: Rotation around z-axis in radians.
+    
+    Returns:
+        Quaternion in (w, x, y, z) format. Shape is (4,).
+    """
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    return np.array([w, x, y, z])
+
+
 def yaw_quat(q):
     w, x, y, z = q
     yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2))

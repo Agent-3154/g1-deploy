@@ -14,7 +14,7 @@ import g1_deploy
 import g1_deploy.observations
 from g1_deploy.base import Observation, Articulation
 from g1_deploy.policy import ONNXModule
-from g1_deploy.utils import extract_meshes, Timer
+from g1_deploy.utils import extract_meshes, Timer, quat_from_euler_xyz, quat_mul
 
 
 def parse_args():
@@ -92,6 +92,16 @@ if __name__ == "__main__":
         robot = g1_deploy.G1HardwareInterface("eth0", str(mjcf_path))
     else:
         robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
+        # Randomize initial x, y position
+        init_pos = np.array(robot.get_data().root_pos_w)
+        init_pos[0] += np.random.uniform(-0.5, 0.5)  # x: +/- 0.5m
+        init_pos[1] += np.random.uniform(-0.5, 0.5)  # y: +/- 0.5m
+        # Randomize initial yaw
+        init_quat = np.array(robot.get_data().quaternion)
+        yaw = np.random.uniform(-1.5, 1.5)  # +/- ~30 degrees
+        delta_quat = quat_from_euler_xyz(0, 0, yaw)
+        init_quat = quat_mul(delta_quat, init_quat)
+        robot.set_root_pose(list(init_pos), list(init_quat))
         robot.run(sync=args.sync)
     print(f"timestep: {robot.get_timestep()}")
 
@@ -141,7 +151,6 @@ if __name__ == "__main__":
     timer = Timer(control_dt)
 
     last_real_time = time.perf_counter()
-    last_sim_time = mjData.time
 
     for i in itertools.count():
         data = robot.data

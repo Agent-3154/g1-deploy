@@ -1,5 +1,6 @@
 onnx_path:
-  policy-01-17_11-04.onnx
+  # policy-01-17_11-04.onnx
+  policy-01-20_15-58.onnx
 
 command:
   motion_file: sfu_29dof.pkl

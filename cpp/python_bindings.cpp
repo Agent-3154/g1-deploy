@@ -149,6 +149,9 @@ PYBIND11_MODULE(_cpp, m) {
         .def("reset", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_pos) {
             self.reset(convert_to_double_array(joint_pos));
         }, py::arg("joint_pos"), "Reset the simulation")
+        .def("set_root_pose", [](G1MujocoInterface& self, std::array<double, 3> pos, std::array<double, 4> quat) {
+            self.set_root_pose(pos, quat);
+        }, py::arg("pos"), py::arg("quat"), "Set root pose (position [x,y,z] and quaternion [w,x,y,z])")
         .def("step", &G1MujocoInterface::step, "Step the simulation")
         .def("write_joint_position_target", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_position_target) {
             self.writeJointPositionTarget(convert_to_double_array(joint_position_target));
