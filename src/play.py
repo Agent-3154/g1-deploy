@@ -48,19 +48,53 @@ if __name__ == "__main__":
     hardware = args.hardware
     if hardware:
         mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1.xml"
-        robot = g1_deploy.G1HardwareInterface("eth0", str(mjcf_path))
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
     else:
         mjcf_path = Path(__file__).parent.parent / "mjcf" / "g1_with_floor.xml"
-        robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
         mjModel = mujoco.MjModel.from_xml_path(str(mjcf_path))
-    print(f"timestep: {robot.get_timestep()}")
+
+    use_rerun = args.rerun_local or args.rerun_remote
+    if use_rerun:
+        meshes = extract_meshes(mjModel)
+        print(len(meshes))
+        rr.init("g1", recording_id="g1")
+        if args.rerun_remote:
+            ip = os.environ.get("RERUN_IP")
+            port = os.environ.get("RERUN_PORT", 9876)
+            rr.connect_grpc(f"rerun+http://{ip}:{port}/proxy")
+        else:
+            rr.spawn()
+        rr.set_time("step", timestamp=0.0)
+        for body_name, mesh in meshes.items():
+            rr.log(
+                f"robot/{body_name}",
+                rr.Mesh3D(
+                    vertex_positions=mesh.vertices,
+                    triangle_indices=mesh.faces,
+                    vertex_normals=mesh.vertex_normals,
+                ),
+            )
+        for body_name, mesh in meshes.items():
+            rr.log(
+                f"ref/{body_name}",
+                rr.Mesh3D(
+                    vertex_positions=mesh.vertices,
+                    triangle_indices=mesh.faces,
+                    vertex_normals=mesh.vertex_normals,
+                    albedo_factor=[0.2, 0.6, 1.0],  # Blue color for ref motion
+                ),
+            )
 
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
 
-    mujoco_joint_names = [mjModel.joint(i).name for i in range(mjModel.njnt)]
-    mujoco_joint_names.remove("floating_base_joint")
+    if hardware:
+        robot = g1_deploy.G1HardwareInterface("eth0", str(mjcf_path))
+    else:
+        robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
+        robot.run(sync=args.sync)
+    print(f"timestep: {robot.get_timestep()}")
+
     robot = Articulation(
         robot,
         config["action"]["action_scaling"],
@@ -101,31 +135,6 @@ if __name__ == "__main__":
                 group_results.append(observation())
             results[group_name] = np.concatenate(group_results, axis=-1, dtype=np.float32)[None, ...]
         return results
-
-    use_rerun = args.rerun_local or args.rerun_remote
-    if use_rerun:
-        meshes = extract_meshes(mjModel)
-        print(len(meshes))
-        rr.init("g1", recording_id="g1")
-        if args.rerun_remote:
-            ip = os.environ.get("RERUN_IP")
-            port = os.environ.get("RERUN_PORT", 9876)
-            rr.connect_grpc(f"rerun+http://{ip}:{port}/proxy")
-        else:
-            rr.spawn()
-        rr.set_time("step", timestamp=0.0)
-        for body_name, mesh in meshes.items():
-            rr.log(
-                f"robot/{body_name}",
-                rr.Mesh3D(
-                    vertex_positions=mesh.vertices,
-                    triangle_indices=mesh.faces,
-                    vertex_normals=mesh.vertex_normals,
-                ),
-            )
-    
-    if not hardware:
-        robot.robot.run(sync=args.sync)
 
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
@@ -178,6 +187,21 @@ if __name__ == "__main__":
                     f"robot/{body_name}",
                     rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
                 )
+            
+            # Visualize ref motion if command exists
+            if command is not None:
+                frame_idx = min(robot.t, command.motion_length - 1)
+                # Get ref motion body pos/quat in Isaac order, convert to MuJoCo order
+                ref_body_pos_isaac = command.body_pos_w[frame_idx]  # (num_bodies, 3)
+                ref_body_quat_isaac = command.body_quat_w[frame_idx]  # (num_bodies, 4)
+                ref_body_pos_mujoco = ref_body_pos_isaac[robot.body_indexing.isaac2mujoco]
+                ref_body_quat_mujoco = ref_body_quat_isaac[robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]
+                for ii, body_name in enumerate(meshes.keys()):
+                    rr.log(
+                        f"ref/{body_name}",
+                        rr.Transform3D(translation=ref_body_pos_mujoco[ii], quaternion=ref_body_quat_mujoco[ii])
+                    )
+            
             rr.log(
                 f"ground",
                 rr.Boxes3D(
