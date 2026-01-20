@@ -14,11 +14,12 @@ from typing import List, Optional,Any
 from pathlib import Path
 from g1_deploy.base import Articulation, RobotInterface
 
+DATA_DIR = Path(__file__).parents[3] / "data"
 
 class RefMotion:
     def __init__(self, articulation: Articulation, motion_file):
         self.articulation = articulation
-        motion_file = Path(__file__).parent.parent / "checkpoints" / motion_file 
+        motion_file = DATA_DIR / motion_file 
         with open(motion_file, "rb") as f:
             motions = joblib.load(f)
             motion_name = list(motions.keys())[4]

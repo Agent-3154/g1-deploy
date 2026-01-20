@@ -2,7 +2,7 @@ onnx_path:
   policy-01-17_11-04.onnx
 
 command:
-  motion_file: /home/ubuntu/Desktop/IsaacSim51/g1-deploy/data/sfu_29dof.pkl
+  motion_file: sfu_29dof.pkl
 observation:
   policy:
     root_quat_w:          {}
