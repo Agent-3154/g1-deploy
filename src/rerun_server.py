@@ -30,6 +30,16 @@ for i in range(model.nbody):
             vertex_normals=mesh.vertex_normals,
         ),
     )
+    
+    rr.log(
+        f"ref/{body.name}",
+        rr.Mesh3D(
+            vertex_positions=mesh.vertices,
+            triangle_indices=mesh.faces,
+            vertex_normals=mesh.vertex_normals,
+            albedo_factor=[0.2, 0.6, 1.0],  # Blue color for ref motion
+        ),
+    )
 
 print("Done")
 
