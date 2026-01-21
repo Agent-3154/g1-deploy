@@ -22,7 +22,7 @@ class RefMotion:
         motion_file = DATA_DIR / motion_file 
         with open(motion_file, "rb") as f:
             motions = joblib.load(f)
-            motion_name = list(motions.keys())[3]
+            motion_name = list(motions.keys())[6]
             print("Loading motion: ", motion_name)
             motion = motions[motion_name]
             self.fps = motion["fps"]

@@ -419,6 +419,9 @@ public:
         toDefaultControl();
 
         lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HardwareInterface::LowCommandWriter, this);
+        
+        // sleep(5);
+        // toUserControl();
     }
     
     void toUserControl() {

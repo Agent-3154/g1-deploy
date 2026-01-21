@@ -103,7 +103,7 @@ if __name__ == "__main__":
         init_quat = quat_mul(delta_quat, init_quat)
         robot.set_root_pose(list(init_pos), list(init_quat))
         robot.run(sync=args.sync)
-    print(f"timestep: {robot.get_timestep()}")
+        print(f"timestep: {robot.get_timestep()}")
 
     robot = Articulation(
         robot,

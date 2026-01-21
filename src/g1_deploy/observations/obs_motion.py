@@ -99,6 +99,20 @@ class ref_motion_phase(Observation):
 
 from g1_deploy.commands import RefMotion
 
+class ref_root_pos(Observation):
+    def __init__(self, articulation: Articulation, command: RefMotion):
+        super().__init__(articulation, command)
+
+    def compute(self):
+        t = min(self.articulation.t, self.command.motion_length - 1)
+        
+        ref_root_pos_w = self.command.root_pos_w[t]
+        ref_root_quat_w = self.command.root_quat_w[t]
+        root_pos_w = self.articulation.root_pos_w
+        root_quat_w = self.articulation.root_quat_w
+        pos, quat = subtract_frame_transforms(root_pos_w, root_quat_w, ref_root_pos_w, ref_root_quat_w)
+        return pos.reshape(-1)
+
 class ref_root_quat(Observation):
     def __init__(self, articulation: Articulation, command: RefMotion):
         super().__init__(articulation, command)
@@ -128,3 +142,13 @@ class ref_kp_pos_gap(Observation):
         body_kp_quat = self.articulation.body_quat_w[self.body_indices]
         pos, _ = subtract_frame_transforms(body_kp_pos, body_kp_quat, ref_kp_pos, ref_kp_quat)
         return pos.reshape(-1)
+
+class ref_qpos(Observation):
+    def __init__(self, articulation: Articulation, command: RefMotion, joint_names: List[str] = ".*"):
+        super().__init__(articulation, command)
+        self.joint_indices = self.articulation.find_joints(joint_names)[0]
+
+    def compute(self):
+        t = min(self.articulation.t, self.command.motion_length - 1)
+        ref_qpos = self.command.joint_pos[t, self.joint_indices]
+        return ref_qpos.reshape(-1)
