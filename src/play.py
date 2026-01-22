@@ -223,6 +223,13 @@ if __name__ == "__main__":
                             rr.Transform3D(translation=ref_body_pos_mujoco[ii], quaternion=ref_body_quat_mujoco[ii])
                         )
                 
+                q = np.asarray(robot.joint_pos)
+                for j, name in enumerate(g1_deploy.utils.constants.JOINT_NAMES_ISAAC):
+                    rr.log(
+                        f"joint_pos/{name}",
+                        rr.Scalars(q[j])
+                    )
+
                 rr.log(
                     f"ground",
                     rr.Boxes3D(
