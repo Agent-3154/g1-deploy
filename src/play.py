@@ -229,6 +229,14 @@ if __name__ == "__main__":
                         f"joint_pos/{name}",
                         rr.Scalars(q[j])
                     )
+                
+                # Log root angular velocity - exactly like joint_pos
+                ang_vel_b = np.asarray(robot.root_ang_vel_b)
+                for j, axis in enumerate(["x", "y", "z"]):
+                    rr.log(
+                        f"root_angvel_b/angvel_{axis}",
+                        rr.Scalars(ang_vel_b[j])
+                    )
 
                 rr.log(
                     f"ground",
