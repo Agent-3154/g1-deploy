@@ -160,6 +160,7 @@ protected:
     mjData *data_;
     std::mutex step_mutex_;
     ControlState control_state_ = ControlState::BUILTIN_CONTROL;
+    double timestep_;
 
     void computeFK() {
         if (this->model_ && this->data_) {
@@ -233,6 +234,8 @@ public:
         this->robot_data_.body_quaternions.resize(this->nbodies_, 4);
         
         mj_forward(this->model_, this->data_);
+
+        timestep_ = static_cast<double>(this->model_->opt.timestep);
     }
     
     RobotData<T> getData() const {
@@ -259,6 +262,10 @@ public:
     void writeJointVelocityTarget(const std::array<T, 29> &joint_velocity_target) {
         std::lock_guard<std::mutex> lock(step_mutex_);
         this->robot_data_.dq_target = joint_velocity_target;
+    }
+
+    double get_timestep() const {
+        return timestep_;
     }
 };
 
@@ -418,7 +425,9 @@ public:
 
         toDefaultControl();
 
-        lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, 2000, &G1HardwareInterface::LowCommandWriter, this);
+        // Convert timestep_ (seconds) to microseconds for thread period
+        int thread_period_us = static_cast<int>(this->timestep_ * 1000000);
+        lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, thread_period_us, &G1HardwareInterface::LowCommandWriter, this);
         
         // sleep(5);
         // toUserControl();
@@ -530,7 +539,6 @@ private:
     std::thread physics_thread_;
     std::atomic<bool> running_;
     std::atomic<bool> should_stop_;
-    double timestep_;  // Physics timestep in ssereconds
 
     void physicsStep() {
         std::lock_guard<std::mutex> lock(step_mutex_);
@@ -646,14 +654,9 @@ public:
     G1MujocoInterface(std::string mjcf_path, double timestep = -1.0) 
         : running_(false),
         should_stop_(false),
-        timestep_(timestep),
         async_(false)
     {
         this->loadMJCF(mjcf_path);
-        // Use model's timestep if not specified
-        if (timestep_ < 0 && this->model_) {
-            timestep_ = this->model_->opt.timestep;
-        }
         updateState();
     }
     
@@ -704,14 +707,6 @@ public:
     
     bool is_running() const {
         return running_.load();
-    }
-    
-    void set_timestep(double timestep) {
-        timestep_ = timestep;
-    }
-    
-    double get_timestep() const {
-        return timestep_;
     }
 
     void reset(const std::array<double, 29> &joint_pos) {

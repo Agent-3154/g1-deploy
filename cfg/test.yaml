@@ -1,7 +1,8 @@
 onnx_path:
   # policy-01-17_11-04.onnx
   # policy-01-20_15-58.onnx
-  ref_qpos.onnx
+  # ref_qpos.onnx
+  policy-01-23_10-11.onnx
 
 command:
   motion_file: sfu_29dof.pkl
@@ -14,18 +15,18 @@ observation:
     ref_qpos:             {}
     ref_root_pos:         {}
     ref_root_quat:        {}
-    body_pos_b:           {body_names: [left_hip_pitch_link, right_hip_pitch_link, 
-                                        left_knee_link, right_knee_link, 
-                                        left_ankle_roll_link, right_ankle_roll_link, 
-                                        left_shoulder_roll_link, right_shoulder_roll_link, 
-                                        left_elbow_link, right_elbow_link, 
-                                        left_wrist_yaw_link, right_wrist_yaw_link]}
-    body_ori_b:           {body_names: [left_hip_pitch_link, right_hip_pitch_link, 
-                                        left_knee_link, right_knee_link, 
-                                        left_ankle_roll_link, right_ankle_roll_link, 
-                                        left_shoulder_roll_link, right_shoulder_roll_link, 
-                                        left_elbow_link, right_elbow_link, 
-                                        left_wrist_yaw_link, right_wrist_yaw_link]}
+    # body_pos_b:           {body_names: [left_hip_pitch_link, right_hip_pitch_link, 
+    #                                     left_knee_link, right_knee_link, 
+    #                                     left_ankle_roll_link, right_ankle_roll_link, 
+    #                                     left_shoulder_roll_link, right_shoulder_roll_link, 
+    #                                     left_elbow_link, right_elbow_link, 
+    #                                     left_wrist_yaw_link, right_wrist_yaw_link]}
+    # body_ori_b:           {body_names: [left_hip_pitch_link, right_hip_pitch_link, 
+    #                                     left_knee_link, right_knee_link, 
+    #                                     left_ankle_roll_link, right_ankle_roll_link, 
+    #                                     left_shoulder_roll_link, right_shoulder_roll_link, 
+    #                                     left_elbow_link, right_elbow_link, 
+    #                                     left_wrist_yaw_link, right_wrist_yaw_link]}
     # ref_kp_pos_gap:       {body_names: [
     #                                     pelvis,
     #                                     left_hip_pitch_link, right_hip_pitch_link, 

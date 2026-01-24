@@ -103,7 +103,8 @@ if __name__ == "__main__":
         init_quat = quat_mul(delta_quat, init_quat)
         robot.set_root_pose(list(init_pos), list(init_quat))
         robot.run(sync=args.sync)
-        print(f"timestep: {robot.get_timestep()}")
+    timestep = robot.get_timestep()
+    print(f"timestep: {timestep}")
 
     robot = Articulation(
         robot,
@@ -148,13 +149,12 @@ if __name__ == "__main__":
 
     viewer = mujoco.viewer.launch_passive(mjModel, mjData)
     control_dt = 0.02
-    timer = Timer(control_dt)
+    timer = Timer(timestep)
+    DECIMATION = control_dt // timestep
+    FPS = 1 / timestep
+    print(f"DECIMATION: {DECIMATION}, fps: {FPS:.1f}")
 
     last_real_time = time.perf_counter()
-
-    # Data collection for visualization
-    joint_pos_history = []
-    applied_action_history = []
 
     try:
         for i in itertools.count():
@@ -165,118 +165,54 @@ if __name__ == "__main__":
             mjData.qvel[6:] = data.dq
             mujoco.mj_forward(mjModel, mjData)
 
-            inputs = onnx_module.dummy_input()
-            inputs.update(compute_observations())
-            action = onnx_module.forward(inputs)["action"]
-            robot.process_action(action)
-            alpha = 0.8
+            if i % DECIMATION == 0:
+                inputs = onnx_module.dummy_input()
+                inputs.update(compute_observations())
+                action = onnx_module.forward(inputs)["action"]
+                robot.process_action(action)
 
+                if use_rerun:
+                    rr.set_time("step", timestamp=i)
+
+                    xpos = np.asarray(data.body_positions)
+                    xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]
+                    for ii, (body_name, mesh) in enumerate(meshes.items()):
+                        rr.log(
+                            f"robot/{body_name}",
+                            rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
+                        )
+                    
+                    # Visualize ref motion if command exists
+                    if command is not None:
+                        frame_idx = min(robot.t, command.motion_length - 1)
+                        # Get ref motion body pos/quat in Isaac order, convert to MuJoCo order
+                        ref_body_pos_isaac = command.body_pos_w[frame_idx]  # (num_bodies, 3)
+                        ref_body_quat_isaac = command.body_quat_w[frame_idx]  # (num_bodies, 4)
+                        ref_body_pos_mujoco = ref_body_pos_isaac[robot.body_indexing.isaac2mujoco]
+                        ref_body_quat_mujoco = ref_body_quat_isaac[robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]
+                        for ii, body_name in enumerate(meshes.keys()):
+                            rr.log(
+                                f"ref/{body_name}",
+                                rr.Transform3D(translation=ref_body_pos_mujoco[ii], quaternion=ref_body_quat_mujoco[ii])
+                            )
+                robot.t += 1
+            alpha = 1.0
+
+            robot.apply_action(alpha)
             if args.sync:
-                decimation = int(control_dt / robot.robot.get_timestep())
-                for _ in range(decimation):
-                    robot.apply_action(alpha)
-                    robot.robot.step()
-            else:
-                robot.apply_action(alpha)
-            robot.t += 1
+                robot.robot.step()
 
-            # Collect data for visualization
-            joint_pos_history.append(robot.joint_pos.copy())
-            applied_action_history.append(robot.applied_action.copy())
-
-            if i % 50 == 0:
+            if i % FPS == 0:
                 current_real_time = time.perf_counter()
                 real_time_delta = current_real_time - last_real_time
-                fps = 50 / real_time_delta
+                fps = FPS / real_time_delta
                 
                 print(f"FPS: {fps:.1f}")
 
                 last_real_time = current_real_time
             
-            # if i == command.motion_length - 1:
-            #     break
-            
-            if use_rerun:
-                rr.set_time("step", timestamp=i)
-                # xpos = mjData.xpos[1:]
-                # xquat = mjData.xquat[1:][:, [1, 2, 3, 0]]
-
-                xpos = np.asarray(data.body_positions)
-                xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]
-                for ii, (body_name, mesh) in enumerate(meshes.items()):
-                    rr.log(
-                        f"robot/{body_name}",
-                        rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
-                    )
-                
-                # Visualize ref motion if command exists
-                if command is not None:
-                    frame_idx = min(robot.t, command.motion_length - 1)
-                    # Get ref motion body pos/quat in Isaac order, convert to MuJoCo order
-                    ref_body_pos_isaac = command.body_pos_w[frame_idx]  # (num_bodies, 3)
-                    ref_body_quat_isaac = command.body_quat_w[frame_idx]  # (num_bodies, 4)
-                    ref_body_pos_mujoco = ref_body_pos_isaac[robot.body_indexing.isaac2mujoco]
-                    ref_body_quat_mujoco = ref_body_quat_isaac[robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]
-                    for ii, body_name in enumerate(meshes.keys()):
-                        rr.log(
-                            f"ref/{body_name}",
-                            rr.Transform3D(translation=ref_body_pos_mujoco[ii], quaternion=ref_body_quat_mujoco[ii])
-                        )
-                
-                q = np.asarray(robot.joint_pos)
-                for j, name in enumerate(g1_deploy.utils.constants.JOINT_NAMES_ISAAC):
-                    rr.log(
-                        f"joint_pos/{name}",
-                        rr.Scalars(q[j])
-                    )
-                
-                # Log root angular velocity - exactly like joint_pos
-                ang_vel_b = np.asarray(robot.root_ang_vel_b)
-                for j, axis in enumerate(["x", "y", "z"]):
-                    rr.log(
-                        f"root_angvel_b/angvel_{axis}",
-                        rr.Scalars(ang_vel_b[j])
-                    )
-
-                rr.log(
-                    f"ground",
-                    rr.Boxes3D(
-                        centers=np.array([0, 0, -0.01]),
-                        half_sizes=np.array([10, 10, 0.02]),
-                        colors=np.array([255, 255, 255]),
-                        fill_mode="solid"
-                    )
-                )
-            
             viewer.sync()
             timer.sleep()
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user. Saving data...")
+        print("\n\nInterrupted by user")
         viewer.close()
-
-    # joint_pos_history = np.array(joint_pos_history)
-    # applied_action_history = np.array(applied_action_history)
-    # save_path = Path("mjc_loco.npz")
-    # np.savez(
-    #     save_path, 
-    #     joint_pos_history=joint_pos_history, 
-    #     applied_action_history=applied_action_history
-    # )
-    # print(f"Saved mujoco data to {save_path}")
-    # print(f"Total steps: {i}")
-    # print(f"Joint positions shape: {joint_pos_history.shape}")
-    # print(f"Applied action shape: {applied_action_history.shape}")
-
-    # from g1_deploy.utils.constants import JOINT_NAMES_MUJOCO
-    # plot_array(
-    #     data=joint_pos_history,
-    #     num_plots=joint_pos_history.shape[1],
-    #     plot_names=JOINT_NAMES_MUJOCO,
-    #     dt=control_dt,
-    # )
-    # plot_array(
-    #     data=applied_action_history,
-    #     num_plots=applied_action_history.shape[1],
-    #     plot_names=robot.action_joint_names,
-    #     dt=control_dt,
-    # )

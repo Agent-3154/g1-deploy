@@ -124,7 +124,8 @@ PYBIND11_MODULE(_cpp, m) {
         .def("write_joint_velocity_target", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_velocity_target) {
             self.writeJointVelocityTarget(convert_to_float_array(joint_velocity_target));
         }, py::arg("joint_velocity_target"), "Write the joint velocity target (accepts list, tuple, or numpy array)")
-        .def("get_gamepad", &G1HardwareInterface::getGamepadState, "Get the current gamepad state");
+        .def("get_gamepad", &G1HardwareInterface::getGamepadState, "Get the current gamepad state")
+        .def("get_timestep", &G1HardwareInterface::get_timestep, "Get control timestep");
 
     // Expose G1MujocoInterface (uses double)
     py::class_<G1MujocoInterface>(m, "G1MujocoInterface")
@@ -144,7 +145,6 @@ PYBIND11_MODULE(_cpp, m) {
         .def("run", &G1MujocoInterface::run, py::arg("sync") = false, "Start physics simulation")
         .def("stop", &G1MujocoInterface::stop, "Stop asynchronous physics simulation")
         .def("is_running", &G1MujocoInterface::is_running, "Check if physics simulation is running")
-        .def("set_timestep", &G1MujocoInterface::set_timestep, py::arg("timestep"), "Set physics timestep")
         .def("get_timestep", &G1MujocoInterface::get_timestep, "Get physics timestep")
         .def("reset", [&convert_to_double_array](G1MujocoInterface& self, py::array_t<double> joint_pos) {
             self.reset(convert_to_double_array(joint_pos));

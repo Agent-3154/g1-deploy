@@ -1,4 +1,5 @@
 <mujoco model="g1">
+    <option timestep="0.005"/>
     <compiler angle="radian" meshdir="./meshes/"/>
 
     <default>
