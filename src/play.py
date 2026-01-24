@@ -14,7 +14,7 @@ import g1_deploy
 import g1_deploy.observations
 from g1_deploy.base import Observation, Articulation
 from g1_deploy.policy import ONNXModule
-from g1_deploy.utils import extract_meshes, Timer, quat_from_euler_xyz, quat_mul, plot_array
+from g1_deploy.utils import extract_meshes, Timer, quat_from_euler_xyz, quat_mul
 
 
 def parse_args():
@@ -30,10 +30,7 @@ CKPT_DIR = Path(__file__).parent.parent / "checkpoints"
 CKPT_DIR.mkdir(exist_ok=True)
 CFG_DIR = Path(__file__).parent.parent / "cfg"
 
-# Example usage
 if __name__ == "__main__":
-    # Create a G1Interface instance
-    # Replace "eth0" with your actual network interface name
     args = parse_args()
     
     config_path = CFG_DIR / f"{args.config}.yaml"
@@ -186,17 +183,15 @@ if __name__ == "__main__":
                     if command is not None:
                         frame_idx = min(robot.t, command.motion_length - 1)
                         # Get ref motion body pos/quat in Isaac order, convert to MuJoCo order
-                        ref_body_pos_isaac = command.body_pos_w[frame_idx]  # (num_bodies, 3)
-                        ref_body_quat_isaac = command.body_quat_w[frame_idx]  # (num_bodies, 4)
-                        ref_body_pos_mujoco = ref_body_pos_isaac[robot.body_indexing.isaac2mujoco]
-                        ref_body_quat_mujoco = ref_body_quat_isaac[robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]
+                        ref_body_pos = command.body_pos_w[frame_idx][robot.body_indexing.isaac2mujoco]
+                        ref_body_quat = command.body_quat_w[frame_idx][robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]  # (num_bodies, 4)
                         for ii, body_name in enumerate(meshes.keys()):
                             rr.log(
                                 f"ref/{body_name}",
-                                rr.Transform3D(translation=ref_body_pos_mujoco[ii], quaternion=ref_body_quat_mujoco[ii])
+                                rr.Transform3D(translation=ref_body_pos[ii], quaternion=ref_body_quat[ii])
                             )
                 robot.t += 1
-            alpha = 1.0
+            alpha = 0.9
 
             robot.apply_action(alpha)
             if args.sync:

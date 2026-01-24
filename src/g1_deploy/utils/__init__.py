@@ -9,7 +9,7 @@ from .math import (
     quat_mul, 
     subtract_frame_transforms,
 )
-from .visualization import extract_meshes, plot_array
+from .visualization import extract_meshes
 from .timerfd import Timer
 
 __all__ = [
@@ -24,6 +24,5 @@ __all__ = [
     "quat_mul",
     "subtract_frame_transforms",
     "extract_meshes",
-    "plot_array",
     "Timer"
 ]
