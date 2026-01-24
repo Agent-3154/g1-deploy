@@ -81,12 +81,18 @@ if __name__ == "__main__":
                     albedo_factor=[0.2, 0.6, 1.0],  # Blue color for ref motion
                 ),
             )
+        robot_paths = [f"robot/{name}" for name in meshes.keys()]
+        ref_paths = [f"ref/{name}" for name in meshes.keys()]
 
     mjData = mujoco.MjData(mjModel)
     mujoco.mj_forward(mjModel, mjData)
 
     if hardware:
-        robot = g1_deploy.G1HardwareInterface("eth0", str(mjcf_path))
+        robot = g1_deploy.G1HardwareInterface(
+            "eth0", 
+            str(mjcf_path), 
+            auto_user_control=False
+        )
     else:
         robot = g1_deploy.G1MujocoInterface(str(mjcf_path))
         # Randomize initial x, y position
@@ -173,23 +179,16 @@ if __name__ == "__main__":
 
                     xpos = np.asarray(data.body_positions)
                     xquat = np.asarray(data.body_quaternions)[:, [1, 2, 3, 0]]
-                    for ii, (body_name, mesh) in enumerate(meshes.items()):
-                        rr.log(
-                            f"robot/{body_name}",
-                            rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii])
-                        )
+                    for ii, path in enumerate(robot_paths):
+                        rr.log(path, rr.Transform3D(translation=xpos[ii], quaternion=xquat[ii]))
                     
                     # Visualize ref motion if command exists
                     if command is not None:
                         frame_idx = min(robot.t, command.motion_length - 1)
-                        # Get ref motion body pos/quat in Isaac order, convert to MuJoCo order
                         ref_body_pos = command.body_pos_w[frame_idx][robot.body_indexing.isaac2mujoco]
-                        ref_body_quat = command.body_quat_w[frame_idx][robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]  # (num_bodies, 4)
-                        for ii, body_name in enumerate(meshes.keys()):
-                            rr.log(
-                                f"ref/{body_name}",
-                                rr.Transform3D(translation=ref_body_pos[ii], quaternion=ref_body_quat[ii])
-                            )
+                        ref_body_quat = command.body_quat_w[frame_idx][robot.body_indexing.isaac2mujoco][:, [1, 2, 3, 0]]
+                        for ii, path in enumerate(ref_paths):
+                            rr.log(path, rr.Transform3D(translation=ref_body_pos[ii], quaternion=ref_body_quat[ii]))
                 robot.t += 1
             alpha = 0.9
 

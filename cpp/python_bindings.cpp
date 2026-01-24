@@ -106,10 +106,11 @@ PYBIND11_MODULE(_cpp, m) {
 
     // Expose G1HardwareInterface (uses float)
     py::class_<G1HardwareInterface>(m, "G1HardwareInterface")
-        .def(py::init<std::string, std::string>(), 
+        .def(py::init<std::string, std::string, bool>(), 
              py::arg("network_interface"), 
              py::arg("mjcf_path") = "",
-             "Initialize hardware interface with optional MJCF path for FK computation")
+             py::arg("auto_user_control") = false,
+             "Initialize hardware interface with optional MJCF path for FK computation and optional auto user control")
         .def("load_mjcf", &G1HardwareInterface::loadMJCF, py::arg("mjcf_path"), "Load the MuJoCo model")
         .def("get_data", &G1HardwareInterface::getData, "Get the current robot data")
         .def("set_joint_stiffness", [&convert_to_float_array](G1HardwareInterface& self, py::array_t<float> joint_stiffness) {

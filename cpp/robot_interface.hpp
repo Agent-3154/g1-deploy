@@ -392,7 +392,7 @@ private:
     }
 
 public:
-    G1HardwareInterface(std::string networkInterface, std::string mjcf_path) {
+    G1HardwareInterface(std::string networkInterface, std::string mjcf_path, bool auto_user_control = false) {
 
         this->loadMJCF(mjcf_path);
 
@@ -429,8 +429,10 @@ public:
         int thread_period_us = static_cast<int>(this->timestep_ * 1000000);
         lowcmd_thread_ = CreateRecurrentThreadEx("lowcmd", UT_CPU_ID_NONE, thread_period_us, &G1HardwareInterface::LowCommandWriter, this);
         
-        // sleep(5);
-        // toUserControl();
+        if (auto_user_control) {
+            sleep(5);
+            toUserControl();
+        }
     }
     
     void toUserControl() {
